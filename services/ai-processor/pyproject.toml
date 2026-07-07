@@ -1,0 +1,24 @@
+[project]
+name = "ai-processor"
+version = "0.1.0"
+description = "Turns career text + job description into a structured, tailored CV via PydanticAI"
+requires-python = ">=3.13"
+dependencies = [
+    "cv-shared",
+    "pydantic-ai-slim[anthropic,openai,google]>=2.5",
+    "valkey>=6.0",
+    "opentelemetry-instrumentation-httpx>=0.57b0",
+]
+
+[project.scripts]
+ai-processor = "ai_processor.main:main"
+
+[tool.uv.sources]
+cv-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_processor"]
