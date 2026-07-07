@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package cvgen.events.v1;
+
+import "cvgen/cv/v1/cv.proto";
+import "google/protobuf/timestamp.proto";
+
+// Job lifecycle events, published to per-job subjects:
+//
+//   cv.{job_id}.requested   JobRequested   (gateway)
+//   cv.{job_id}.structured  JobStructured  (ai-processor)
+//   cv.{job_id}.rendered    JobRendered    (cv-generator)
+//   cv.{job_id}.failed      JobFailed      (either worker)
+//
+// The events themselves are the job status; there is no separate
+// status channel.
+
+// Deliberately carries NO API key. The user's provider key is handed
+// off out-of-band via Valkey (SET cv:apikey:{job_id} ... EX) and
+// claimed atomically with GETDEL by the ai-processor. See ADR 0006.
+message JobRequested {
+  string job_id = 1;
+  string career_text = 2;
+  string job_description = 3;
+  cvgen.cv.v1.PersonalInfo personal_info = 4;
+  // Model catalog key (see cvgen.catalog.v1), never a raw model id.
+  string model_key = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}
+
+message JobStructured {
+  string job_id = 1;
+  cvgen.cv.v1.CV cv = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}
+
+message JobRendered {
+  string job_id = 1;
+  // Object key of the PDF in the storage bucket, e.g. "cvs/{job_id}.pdf".
+  string pdf_object_key = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}
+
+enum JobStage {
+  JOB_STAGE_UNSPECIFIED = 0;
+  JOB_STAGE_PROCESSING = 1; // LLM structuring in ai-processor
+  JOB_STAGE_RENDERING = 2; // Typst rendering in cv-generator
+}
+
+message JobFailed {
+  string job_id = 1;
+  JobStage stage = 2;
+  // Human-readable, user-safe error description.
+  string error = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}

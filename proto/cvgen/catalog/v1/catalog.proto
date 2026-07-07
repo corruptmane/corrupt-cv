@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package cvgen.catalog.v1;
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_ANTHROPIC = 1;
+  PROVIDER_OPENAI = 2;
+  PROVIDER_GOOGLE = 3;
+  // Test provider that returns a canned CV without calling any LLM;
+  // requires no API key.
+  PROVIDER_FAKE = 4;
+}
+
+// One selectable model in the dynconfig catalog (NATS KV bucket
+// "model-catalog", seeded from configs/model-catalog.yaml by the
+// gateway). Users select models by key; raw model ids are never
+// accepted from user input.
+message ModelCatalogEntry {
+  // Stable selection key, e.g. "anthropic/claude-sonnet-4-5". Doubles as
+  // the NATS KV key, so it must stay within the KV key charset
+  // [-/_=.a-zA-Z0-9] (notably: no colons).
+  string key = 1;
+  Provider provider = 2;
+  // Provider-native model id handed to PydanticAI.
+  string model_id = 3;
+  string display_name = 4;
+  optional string description = 5;
+}

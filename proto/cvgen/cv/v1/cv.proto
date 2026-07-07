@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package cvgen.cv.v1;
+
+// A labeled hyperlink, e.g. GitHub or LinkedIn.
+message Link {
+  string label = 1;
+  string url = 2;
+}
+
+message PersonalInfo {
+  string name = 1;
+  string email = 2;
+  optional string phone = 3;
+  string location_city = 4;
+  string location_country = 5;
+  repeated Link links = 6;
+}
+
+message Experience {
+  string company = 1;
+  string position = 2;
+  string start_date = 3;
+  // Absent means the position is current; renderers display "Present".
+  optional string end_date = 4;
+  string location = 5;
+  string description = 6;
+  repeated string highlights = 7;
+}
+
+message Education {
+  string institution = 1;
+  string degree = 2;
+  string field = 3;
+  string start_date = 4;
+  string end_date = 5;
+  optional double gpa = 6;
+  repeated string highlights = 7;
+}
+
+message Skill {
+  string category = 1;
+  repeated string items = 2;
+}
+
+message Project {
+  string name = 1;
+  string description = 2;
+  optional string url = 3;
+  repeated string technologies = 4;
+}
+
+enum LanguageProficiency {
+  LANGUAGE_PROFICIENCY_UNSPECIFIED = 0;
+  LANGUAGE_PROFICIENCY_NATIVE = 1;
+  LANGUAGE_PROFICIENCY_FLUENT = 2;
+  LANGUAGE_PROFICIENCY_PROFESSIONAL = 3;
+  LANGUAGE_PROFICIENCY_INTERMEDIATE = 4;
+  LANGUAGE_PROFICIENCY_BASIC = 5;
+}
+
+message Language {
+  string name = 1;
+  LanguageProficiency proficiency = 2;
+}
+
+// The full structured CV document produced by the AI processor and
+// consumed by the Typst renderer.
+message CV {
+  PersonalInfo personal_info = 1;
+  string summary = 2;
+  repeated Experience experience = 3;
+  repeated Education education = 4;
+  repeated Skill skills = 5;
+  repeated Project projects = 6;
+  repeated Language languages = 7;
+}

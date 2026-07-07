@@ -1,0 +1,16 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/corruptmane/cv/services/gateway/gen
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: services/gateway/gen
+    opt: paths=source_relative
+  - remote: buf.build/protocolbuffers/python
+    out: libs/python/cv-shared/src
+  - remote: buf.build/protocolbuffers/pyi
+    out: libs/python/cv-shared/src
+inputs:
+  - directory: proto

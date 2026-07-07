@@ -1,0 +1,42 @@
+[project]
+name = "cv-workspace"
+version = "0.0.0"
+description = "Workspace root; not a package"
+requires-python = ">=3.13"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "libs/python/cv-shared",
+    "services/ai-processor",
+    "services/cv-generator",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.14",
+    "ty>=0.0.1a21",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = ["libs/python/cv-shared/src/cvgen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
+
+[tool.ty.src]
+exclude = ["libs/python/cv-shared/src/cvgen"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = [
+    "libs/python/cv-shared/tests",
+    "services/ai-processor/tests",
+    "services/cv-generator/tests",
+]
