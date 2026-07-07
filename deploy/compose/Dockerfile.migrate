@@ -1,0 +1,13 @@
+# One-shot goose migration runner. Build context: repo root.
+#   docker build -f deploy/compose/Dockerfile.migrate .
+# Migrations are bind-mounted read-only by compose; the command lives in
+# compose.yaml so the DSN stays in one place.
+FROM golang:1.26-alpine AS build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@latest
+
+FROM alpine:3.22
+COPY --from=build /go/bin/goose /usr/local/bin/goose
+USER nobody
+ENTRYPOINT ["goose"]

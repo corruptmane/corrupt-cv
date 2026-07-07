@@ -1,0 +1,270 @@
+name: cvgen
+
+# NOTE: the S3 bucket is "cvs", not "cv" — the S3 spec (enforced by Swift's
+# s3api, MinIO, and AWS alike) requires bucket names of at least 3 characters.
+x-s3-env: &s3-env
+  S3_ENDPOINT: http://swift:8080
+  S3_REGION: us-east-1
+  S3_BUCKET: cvs
+  S3_ACCESS_KEY_ID: "test:tester"
+  S3_SECRET_ACCESS_KEY: testing
+  S3_USE_PATH_STYLE: "true"
+
+services:
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      # busybox wget ships in the nats alpine image (verified).
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: cv
+      POSTGRES_PASSWORD: cv
+      POSTGRES_DB: cv
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cv", "-d", "cv"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # OpenStack Swift all-in-one with s3api already in the stock proxy pipeline
+  # (verified: tempauth creds test:tester/testing, path-style requests).
+  # The image is amd64-only; on Apple Silicon it runs under Rosetta emulation.
+  swift:
+    image: openstackswift/saio:latest
+    platform: linux/amd64
+    ports:
+      - "8090:8080"
+    healthcheck:
+      # curl is present in the image (verified); /healthcheck is Swift's
+      # built-in proxy healthcheck middleware.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+
+  # One-shot bucket bootstrap. Retries until Swift actually answers S3
+  # requests (the healthcheck covers the proxy, not backend readiness).
+  swift-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      swift:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: "test:tester"
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        for i in $$(seq 1 30); do
+          if aws --endpoint-url http://swift:8080 s3api head-bucket --bucket cvs 2>/dev/null; then
+            echo "bucket cvs already exists"; exit 0
+          fi
+          if aws --endpoint-url http://swift:8080 s3api create-bucket --bucket cvs 2>/dev/null; then
+            echo "bucket cvs created"; exit 0
+          fi
+          echo "swift not ready yet (attempt $$i), retrying..."; sleep 2
+        done
+        echo "swift never became ready" >&2; exit 1
+    restart: "no"
+
+  # One-shot goose migration runner; plain SQL migrations bind-mounted from
+  # the repo so new migrations don't require an image rebuild.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../migrations:/migrations:ro
+    command:
+      - "-dir"
+      - "/migrations"
+      - "postgres"
+      - "postgres://cv:cv@postgres:5432/cv?sslmode=disable"
+      - "up"
+    restart: "no"
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      <<: *s3-env
+      APP_ADDR: ":8080"
+      OPS_ADDR: ":9090"
+      DATABASE_URL: postgres://cv:cv@postgres:5432/cv?sslmode=disable
+      NATS_URL: nats://nats:4222
+      VALKEY_URL: valkey://valkey:6379
+      # Fixed dev secret; override via .env or the environment for anything
+      # that isn't a local compose stack.
+      SESSION_SECRET: ${SESSION_SECRET:-6f1c5c85a2f94ce1b1c2f5f0a3d84b1de6a9c0f47d3b82e5a1c4f7092b6d8e13}
+      MODEL_CATALOG_PATH: /etc/cvgen/model-catalog.yaml
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Empty = telemetry off; `just up-obs` sets it to the collector.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: gateway
+    volumes:
+      # Catalog edits take effect on gateway restart, no image rebuild needed.
+      - ../../configs/model-catalog.yaml:/etc/cvgen/model-catalog.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      swift-init:
+        condition: service_completed_successfully
+
+  ai-processor:
+    build:
+      context: ../..
+      dockerfile: services/ai-processor/Dockerfile
+    environment:
+      NATS_URL: nats://nats:4222
+      VALKEY_URL: valkey://valkey:6379
+      OPS_PORT: "9090"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ai-processor
+    depends_on:
+      nats:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  cv-generator:
+    build:
+      context: ../..
+      dockerfile: services/cv-generator/Dockerfile
+    environment:
+      <<: *s3-env
+      NATS_URL: nats://nats:4222
+      OPS_PORT: "9090"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TYPST_TEMPLATE_PATH: /app/services/cv-generator/assets/cv.typ
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: cv-generator
+    depends_on:
+      nats:
+        condition: service_healthy
+      swift-init:
+        condition: service_completed_successfully
+
+  # ------------------------------------------------------------------
+  # Optional observability stack: `just up-obs` / --profile observability
+  # ------------------------------------------------------------------
+  otel-collector:
+    profiles: ["observability"]
+    image: otel/opentelemetry-collector-contrib:0.135.0
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - victoriatraces
+
+  victoriametrics:
+    profiles: ["observability"]
+    image: victoriametrics/victoria-metrics:v1.126.0
+    command:
+      - "-retentionPeriod=7d"
+      - "-storageDataPath=/storage"
+      # Convert OTLP metric names to Prometheus conventions
+      # (dots -> underscores, unit suffixes), so PromQL reads naturally.
+      - "-opentelemetry.usePrometheusNaming"
+    volumes:
+      - vm-data:/storage
+    ports:
+      - "8428:8428"
+
+  victorialogs:
+    profiles: ["observability"]
+    image: victoriametrics/victoria-logs:v1.36.1
+    command:
+      - "-retentionPeriod=7d"
+      - "-storageDataPath=/storage"
+    volumes:
+      - vl-data:/storage
+    ports:
+      - "9428:9428"
+
+  victoriatraces:
+    profiles: ["observability"]
+    image: victoriametrics/victoria-traces:v0.6.0
+    command:
+      - "-retentionPeriod=7d"
+      - "-storageDataPath=/storage"
+    volumes:
+      - vt-data:/storage
+    ports:
+      - "10428:10428"
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:12.2.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_BASIC_ENABLED: "false"
+      # Needed for the VictoriaLogs datasource; requires internet at start.
+      GF_INSTALL_PLUGINS: victoriametrics-logs-datasource
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - victoriatraces
+
+volumes:
+  nats-data:
+  postgres-data:
+  vm-data:
+  vl-data:
+  vt-data:
+  grafana-data:
