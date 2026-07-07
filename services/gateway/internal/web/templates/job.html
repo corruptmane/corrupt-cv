@@ -1,0 +1,63 @@
+{{define "content"}}
+<section class="card job-card" data-job-id="{{.Job.ID}}">
+  <h2>CV job</h2>
+  <p class="hint">Job <code>{{.Job.ID}}</code> · model <code>{{.Job.ModelKey}}</code> · created {{.Job.CreatedAt.Format "2006-01-02 15:04:05"}}</p>
+
+  <ol class="timeline" id="timeline">
+    <li id="step-pending">Queued<span class="step-note">waiting for the AI processor</span></li>
+    <li id="step-rendering">Structuring &amp; rendering<span class="step-note">LLM output being typeset with Typst</span></li>
+    <li id="step-completed">Ready<span class="step-note">your PDF is available</span></li>
+  </ol>
+
+  <div id="error-box" class="flash flash-error" hidden></div>
+
+  <div class="job-actions">
+    <a id="download-btn" class="button" href="/jobs/{{.Job.ID}}/download" hidden>Download PDF</a>
+    <a href="/" class="button button-secondary">Back to jobs</a>
+  </div>
+</section>
+
+<script>
+(function () {
+  var jobId = document.querySelector('.job-card').dataset.jobId;
+  var steps = { pending: 'step-pending', rendering: 'step-rendering', completed: 'step-completed' };
+  var order = ['pending', 'rendering', 'completed'];
+
+  function render(update) {
+    var reached = update.status === 'failed' ? 'rendering' : update.status;
+    var reachedIdx = order.indexOf(reached);
+    order.forEach(function (name, idx) {
+      var el = document.getElementById(steps[name]);
+      el.classList.toggle('done', reachedIdx >= 0 && idx < reachedIdx);
+      el.classList.toggle('active', idx === reachedIdx && update.status !== 'failed');
+      if (update.status === 'completed') { el.classList.add('done'); el.classList.remove('active'); }
+    });
+    var errBox = document.getElementById('error-box');
+    if (update.status === 'failed') {
+      errBox.hidden = false;
+      errBox.textContent = 'Generation failed: ' + (update.error || 'unknown error');
+    }
+    if (update.status === 'completed' && update.download_url) {
+      var btn = document.getElementById('download-btn');
+      btn.href = update.download_url;
+      btn.hidden = false;
+    }
+  }
+
+  // Initial state straight from the server-rendered page; the SSE
+  // stream re-sends it immediately anyway.
+  var initial = {{.InitialJSON}};
+  render(initial);
+
+  if (initial.status !== 'completed' && initial.status !== 'failed') {
+    var es = new EventSource('/jobs/' + jobId + '/events');
+    es.addEventListener('status', function (e) {
+      var update = JSON.parse(e.data);
+      render(update);
+      if (update.status === 'completed' || update.status === 'failed') { es.close(); }
+    });
+    es.onerror = function () { /* EventSource retries automatically */ };
+  }
+})();
+</script>
+{{end}}

@@ -1,0 +1,16 @@
+{{if .}}
+<ul class="model-list">
+  {{range .}}
+  <li>
+    <button type="button" class="model-option"
+      onclick="selectModel({{.GetKey}}, {{.GetDisplayName}})">
+      <span class="model-name">{{.GetDisplayName}}</span>
+      <span class="model-key">{{.GetKey}}</span>
+      {{if .GetDescription}}<span class="model-desc">{{.GetDescription}}</span>{{end}}
+    </button>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="hint">No models match.</p>
+{{end}}

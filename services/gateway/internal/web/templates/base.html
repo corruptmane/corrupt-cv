@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CV Generator</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="brand">CV&nbsp;Generator</a>
+    <span class="tagline">AI-tailored CVs, rendered to PDF</span>
+  </header>
+  <main>
+    {{template "content" .}}
+  </main>
+  <footer class="site-footer">
+    <p>Your API key is used once per job and never stored.</p>
+  </footer>
+</body>
+</html>

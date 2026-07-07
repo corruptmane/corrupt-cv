@@ -1,0 +1,107 @@
+{{define "content"}}
+{{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
+{{if .Notice}}<div class="flash flash-notice">{{.Notice}}</div>{{end}}
+
+<div class="columns">
+  <section class="card">
+    <h2>1. Your profile</h2>
+    <p class="hint">Saved once, reused for every CV. Everything is scoped to this browser.</p>
+    <form method="post" action="/profile">
+      <label for="career_text">Career history</label>
+      <textarea id="career_text" name="career_text" rows="10" required
+        placeholder="Paste your full career history: roles, dates, achievements, education, skills...">{{.Profile.CareerText}}</textarea>
+
+      <div class="grid-2">
+        <div>
+          <label for="name">Name</label>
+          <input id="name" name="name" value="{{.Profile.Name}}" required>
+        </div>
+        <div>
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" value="{{.Profile.Email}}" required>
+        </div>
+        <div>
+          <label for="phone">Phone <span class="opt">(optional)</span></label>
+          <input id="phone" name="phone" value="{{.Profile.Phone}}">
+        </div>
+        <div>
+          <label for="city">City</label>
+          <input id="city" name="city" value="{{.Profile.City}}">
+        </div>
+        <div>
+          <label for="country">Country</label>
+          <input id="country" name="country" value="{{.Profile.Country}}">
+        </div>
+      </div>
+
+      <label for="links">Links <span class="opt">(one per line: <code>Label https://url</code>)</span></label>
+      <textarea id="links" name="links" rows="3"
+        placeholder="GitHub https://github.com/you&#10;LinkedIn https://linkedin.com/in/you">{{.Profile.Links}}</textarea>
+
+      <button type="submit">Save profile</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>2. Generate a CV</h2>
+    {{if not .HasProfile}}<p class="hint warn">Save your profile first — the job form needs it.</p>{{end}}
+    <form method="post" action="/jobs">
+      <label for="job_description">Job description</label>
+      <textarea id="job_description" name="job_description" rows="8" required
+        placeholder="Paste the job posting you are applying for..."></textarea>
+
+      <label for="model_search">Model</label>
+      <input type="search" id="model_search" name="q" placeholder="Search models..."
+        autocomplete="off"
+        hx-get="/models/search" hx-trigger="input changed delay:200ms, focus"
+        hx-target="#model-results" hx-swap="innerHTML">
+      <input type="hidden" id="model_key" name="model_key" value="">
+      <div id="model-results" class="model-results"></div>
+      <p class="hint" id="model-selected">No model selected.</p>
+
+      <label for="api_key">Provider API key</label>
+      <input id="api_key" name="api_key" type="password" autocomplete="off"
+        placeholder="sk-...">
+      <p class="hint">Used once for this job, handed to the processor over a private channel, and never stored. The Fake model needs no key.</p>
+
+      <button type="submit">Generate CV</button>
+    </form>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Your jobs</h2>
+  {{if .Jobs}}
+  <table class="jobs-table">
+    <thead>
+      <tr><th>Created</th><th>Model</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range .Jobs}}
+      <tr>
+        <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+        <td>{{.ModelKey}}</td>
+        <td><span class="status status-{{.Status}}">{{.Status}}</span></td>
+        <td>
+          <a href="/jobs/{{.ID}}">view</a>
+          {{if eq .Status "completed"}} · <a href="/jobs/{{.ID}}/download">PDF</a>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="hint">No jobs yet. Generate your first CV above.</p>
+  {{end}}
+</section>
+
+<script>
+  // Called by the /models/search partial when a model is picked.
+  function selectModel(key, displayName) {
+    document.getElementById('model_key').value = key;
+    document.getElementById('model_search').value = displayName;
+    document.getElementById('model-results').innerHTML = '';
+    document.getElementById('model-selected').textContent = 'Selected: ' + displayName + ' (' + key + ')';
+  }
+</script>
+{{end}}
