@@ -1,0 +1,22 @@
+[project]
+name = "ai-processor"
+version = "0.1.0"
+description = "Consumes cv.*.requested, runs multiprovider AI (PydanticAI), emits cv.*.structured."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "cv-worker",
+    "cv-contracts",
+    "pydantic-ai-slim[openai,anthropic,google]>=1.0,<2",
+    "valkey>=6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+cv-worker = { workspace = true }
+cv-contracts = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["ai_processor"]

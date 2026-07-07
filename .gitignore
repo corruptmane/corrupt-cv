@@ -1,0 +1,38 @@
+# ---- Go ----
+/services/gateway/bin/
+*.test
+*.out
+vendor/
+
+# ---- Python / uv ----
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.ty_cache/
+dist/
+*.egg-info/
+
+# ---- Node (HTMX assets are vendored, but just in case) ----
+node_modules/
+
+# ---- Local env / secrets ----
+.env
+.env.local
+*.local
+
+# ---- Local planning doc (kept out of history) ----
+plan.md
+
+# ---- Build / data artifacts ----
+/tmp/
+*.pdf
+!docs/**/*.pdf
+
+# ---- Editor / OS ----
+.DS_Store
+.idea/
+.vscode/
+*.swp

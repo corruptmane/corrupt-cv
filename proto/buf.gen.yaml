@@ -1,0 +1,18 @@
+version: v2
+# clean is intentionally false: gen/python carries a hand-written pyproject.toml
+# and __init__.py files alongside generated *_pb2.py. CI guards staleness by
+# regenerating and diffing (see .github/workflows/proto.yml).
+clean: false
+# Plugin versions are pinned for reproducible codegen. They are chosen to match
+# released language runtimes: protocolbuffers/go v1.36.6 <-> google.golang.org/protobuf
+# v1.36.6, and protocolbuffers/python v31.1 <-> protobuf>=6.31,<7 on PyPI.
+plugins:
+  # Go messages. paths=source_relative => gen/go/cv/v1/*.pb.go
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: gen/go
+    opt: paths=source_relative
+  # Python messages + type stubs => gen/python/cv/v1/*_pb2.py(.pyi)
+  - remote: buf.build/protocolbuffers/python:v31.1
+    out: gen/python
+  - remote: buf.build/protocolbuffers/pyi:v31.1
+    out: gen/python

@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package cv.v1;
+
+option go_package = "github.com/corruptmane/cv/gen/go/cv/v1;cvv1";
+
+import "cv/v1/cv.proto";
+
+// Provider selects which AI backend the AI Processor uses for a request.
+// PROVIDER_TEST routes to PydanticAI's deterministic TestModel (no key, for
+// smoke/e2e). PROVIDER_OLLAMA is keyless local inference.
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_OPENAI = 1;
+  PROVIDER_ANTHROPIC = 2;
+  PROVIDER_GEMINI = 3;
+  PROVIDER_OLLAMA = 4;
+  PROVIDER_TEST = 5;
+}
+
+// Contacts holds the predefined fields the user fills on the form. These are
+// authoritative and overwrite any contact details the model might infer.
+message Contacts {
+  string name = 1;
+  string email = 2;
+  optional string phone = 3;
+  string location_city = 4;
+  string location_country = 5;
+  repeated Link links = 6;
+}
+
+// GenerationRequest is the payload published on `cv.{job_id}.requested`.
+// The BYO API key is intentionally absent: it lives transiently in Valkey
+// keyed by job_id and is never placed on the bus (JetStream persists messages).
+message GenerationRequest {
+  string job_id = 1;
+  string experience_text = 2; // raw free-text career history
+  string job_description = 3;  // target JD to tailor the CV against
+  Contacts contacts = 4;
+  Provider provider = 5;
+  string model = 6; // provider-specific model id (empty => provider default)
+}
+
+// CVStructured is published on `cv.{job_id}.structured` by the AI Processor.
+message CVStructured {
+  string job_id = 1;
+  CV cv = 2;
+  Provider provider = 3;
+  string model = 4;
+}
+
+// CVCompleted is published on `cv.{job_id}.completed` by the CV Generator.
+message CVCompleted {
+  string job_id = 1;
+  string object_key = 2; // S3 key of the rendered PDF
+  uint64 size_bytes = 3;
+}
+
+// Stage identifies which pipeline step failed.
+enum Stage {
+  STAGE_UNSPECIFIED = 0;
+  STAGE_AI = 1;
+  STAGE_RENDER = 2;
+}
+
+// CVFailed is published on `cv.{job_id}.failed` by whichever stage failed.
+// `message` is a human-readable, secret-free error summary.
+message CVFailed {
+  string job_id = 1;
+  Stage stage = 2;
+  string message = 3;
+}

@@ -1,0 +1,33 @@
+# OTel Collector: receives OTLP traces from the services and forwards them to
+# VictoriaTraces. Metrics are NOT pushed here — VictoriaMetrics SCRAPES each
+# service's /metrics ops endpoint (see victoriametrics-scrape.yml). Logs go
+# stdout -> Vector -> VictoriaLogs (see vector.yaml).
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+processors:
+  batch: {}
+  memory_limiter:
+    check_interval: 2s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+exporters:
+  # Traces -> VictoriaTraces via OTLP/HTTP.
+  # NOTE: confirm the ingest path against your VictoriaTraces build; otlphttp
+  # appends /v1/traces to this base.
+  otlphttp/traces:
+    traces_endpoint: http://victoriatraces:10428/insert/opentelemetry/v1/traces
+    tls: { insecure: true }
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/traces]
+  telemetry:
+    logs: { level: warn }

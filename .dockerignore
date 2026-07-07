@@ -1,0 +1,9 @@
+.git
+**/.venv
+**/__pycache__
+**/.ruff_cache
+**/.pytest_cache
+**/.ty_cache
+**/bin
+*.pdf
+plan.md

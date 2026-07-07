@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package cv.v1;
+
+option go_package = "github.com/corruptmane/cv/gen/go/cv/v1;cvv1";
+
+// Link is a labelled external URL (portfolio, GitHub, LinkedIn, ...).
+message Link {
+  string label = 1;
+  string url = 2;
+}
+
+// PersonalInfo is the identity/contact block of a CV.
+message PersonalInfo {
+  string name = 1;
+  string email = 2;
+  optional string phone = 3;
+  string location_city = 4;
+  string location_country = 5;
+  repeated Link links = 6;
+}
+
+// Experience is a single role in the candidate's career history.
+message Experience {
+  string company = 1;
+  string position = 2;
+  // Free-form dates ("2021-03", "Mar 2021"); kept as strings to mirror source data.
+  string start_date = 3;
+  optional string end_date = 4; // absent => current role
+  string location = 5;
+  string description = 6;
+  repeated string highlights = 7;
+}
+
+// Education is a single qualification.
+message Education {
+  string institution = 1;
+  string degree = 2;
+  string field = 3;
+  string start_date = 4;
+  string end_date = 5;
+  optional double gpa = 6;
+  repeated string highlights = 7;
+}
+
+// Skill groups related competencies under a category.
+message Skill {
+  string category = 1;
+  repeated string items = 2;
+}
+
+// Project is a notable piece of work, optionally linked.
+message Project {
+  string name = 1;
+  string description = 2;
+  optional string url = 3;
+  repeated string technologies = 4;
+}
+
+// LanguageProficiency mirrors the source enum; values carry the buf-required
+// enum-name prefix. The string forms (NATIVE, FLUENT, ...) are mapped in code.
+enum LanguageProficiency {
+  LANGUAGE_PROFICIENCY_UNSPECIFIED = 0;
+  LANGUAGE_PROFICIENCY_NATIVE = 1;
+  LANGUAGE_PROFICIENCY_FLUENT = 2;
+  LANGUAGE_PROFICIENCY_PROFESSIONAL = 3;
+  LANGUAGE_PROFICIENCY_INTERMEDIATE = 4;
+  LANGUAGE_PROFICIENCY_BASIC = 5;
+}
+
+message Language {
+  string name = 1;
+  LanguageProficiency proficiency = 2;
+}
+
+// CV is the structured, AI-produced result that drives PDF rendering.
+// Field set is 1:1 with the project's canonical Pydantic CV model.
+message CV {
+  PersonalInfo personal_info = 1;
+  string summary = 2;
+  repeated Experience experience = 3;
+  repeated Education education = 4;
+  repeated Skill skills = 5;
+  repeated Project projects = 6;
+  repeated Language languages = 7;
+}

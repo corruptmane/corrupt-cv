@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI CV Generator</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+<main class="container">
+  <h1>AI-tailored CV generator</h1>
+  <p class="sub">Paste your experience and a job description &mdash; get a CV tailored to the role as a PDF.</p>
+
+  <form method="post" action="/generations" class="card">
+    <label>Your experience (free text)
+      <textarea name="experience_text" rows="8" required
+        placeholder="Roles, achievements, skills, dates&hellip;"></textarea>
+    </label>
+
+    <label>Target job description
+      <textarea name="job_description" rows="8" required
+        placeholder="Paste the JD you're applying to&hellip;"></textarea>
+    </label>
+
+    <fieldset>
+      <legend>Contact details</legend>
+      <div class="grid">
+        <label>Full name<input name="name" required></label>
+        <label>Email<input name="email" type="email" required></label>
+        <label>Phone (optional)<input name="phone"></label>
+        <label>City<input name="location_city" required></label>
+        <label>Country<input name="location_country" required></label>
+      </div>
+      <div class="grid">
+        <label>Link label<input name="link_label" placeholder="GitHub"></label>
+        <label>Link URL<input name="link_url" placeholder="https://github.com/you"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>AI provider</legend>
+      <div class="grid">
+        <label>Provider
+          <select name="provider"
+                  hx-get="/models" hx-target="#model-field" hx-swap="innerHTML" hx-trigger="change">
+            <option value="test">Demo (no key, deterministic)</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="gemini">Gemini</option>
+            <option value="ollama">Ollama (local, no key)</option>
+          </select>
+        </label>
+        <div id="model-field">{{template "model_field" .}}</div>
+        <label>API key (BYO, not stored)<input name="api_key" type="password" autocomplete="off"></label>
+      </div>
+      <p class="hint">Models come from a server-side registry (no free-text guessing). Your key is held
+        only in Valkey for a few minutes to make the call, then deleted &mdash; never in the database,
+        the message bus, or logs.</p>
+    </fieldset>
+
+    <button type="submit">Generate CV</button>
+  </form>
+</main>
+</body>
+</html>

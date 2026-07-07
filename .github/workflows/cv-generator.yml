@@ -1,0 +1,25 @@
+name: cv-generator
+on:
+  pull_request:
+    paths:
+      ["services/cv-generator/**", "libs/cvworker/**", "proto/gen/python/**", "pyproject.toml", "uv.lock"]
+  push:
+    branches: [main]
+    paths:
+      ["services/cv-generator/**", "libs/cvworker/**", "proto/gen/python/**", "pyproject.toml", "uv.lock"]
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: ruff
+        run: uv run --no-sync ruff check libs/cvworker services/cv-generator
+      - name: ty
+        run: uv run --no-sync ty check libs/cvworker services/cv-generator
+      - name: pytest
+        run: uv run --no-sync pytest services/cv-generator -q

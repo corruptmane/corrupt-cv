@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generating CV&hellip;</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx-ext-sse@2.2.2"></script>
+</head>
+<body>
+<main class="container">
+  <h1>Your tailored CV</h1>
+  <p class="sub">Job <code>{{.ID}}</code></p>
+
+  <div class="card" hx-ext="sse" sse-connect="/generations/{{.ID}}/events">
+    <div sse-swap="status">{{.Fragment}}</div>
+  </div>
+
+  <p><a href="/">&larr; Generate another</a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{{define "status_fragment"}}{{if eq .Key "completed"}}
+<div class="status done">
+  <strong>Ready &#10003;</strong>
+  <a class="btn" href="/generations/{{.ID}}/pdf">Download PDF</a>
+</div>
+{{else if eq .Key "failed"}}
+<div class="status failed">
+  <strong>Failed</strong>
+  <p>{{.Error}}</p>
+</div>
+{{else if eq .Key "rendering"}}
+<div class="status working"><span class="spinner"></span> Tailoring &amp; rendering&hellip;</div>
+{{else}}
+<div class="status working"><span class="spinner"></span> Queued&hellip;</div>
+{{end}}{{end}}
+
+{{define "model_field"}}<label>Model
+  <select name="model">
+    {{range .Models}}<option value="{{.ID}}"{{if .Default}} selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+</label>{{end}}

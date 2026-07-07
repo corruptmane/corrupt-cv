@@ -1,0 +1,31 @@
+# Vector tails all container stdout via the Docker socket, promotes our services'
+# JSON log fields to the top level, and ships everything to VictoriaLogs'
+# Elasticsearch-bulk ingest endpoint.
+sources:
+  docker:
+    type: docker_logs
+
+transforms:
+  parse:
+    type: remap
+    inputs: [docker]
+    source: |
+      # Merge structured JSON logs (msg/level/service/...) up to the top level.
+      # Non-JSON infra lines (parse_json fails) pass through unchanged.
+      parsed = parse_json(.message) ?? null
+      . = merge(., parsed) ?? .
+
+sinks:
+  victorialogs:
+    type: elasticsearch
+    inputs: [parse]
+    mode: bulk
+    api_version: v8
+    healthcheck:
+      enabled: false
+    endpoints:
+      - "http://victorialogs:9428/insert/elasticsearch/"
+    query:
+      _msg_field: "msg,message"
+      _time_field: "time,timestamp"
+      _stream_fields: "service,container_name"

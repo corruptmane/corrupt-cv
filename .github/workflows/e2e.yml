@@ -1,0 +1,28 @@
+name: e2e
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bring up the stack
+        run: docker compose up -d --build
+      - name: wait for gateway readiness
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:9090/readyz >/dev/null; then exit 0; fi
+            sleep 3
+          done
+          echo "gateway did not become ready"; exit 1
+      - name: smoke (keyless TEST pipeline -> PDF)
+        run: ./scripts/smoke.sh
+      - name: dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color | tail -n 400
+      - name: teardown
+        if: always()
+        run: docker compose down -v
