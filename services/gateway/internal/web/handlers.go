@@ -295,7 +295,7 @@ func (s *Server) handleJobDownload(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "internal error")
 		return
 	}
-	defer obj.Body.Close()
+	defer func() { _ = obj.Body.Close() }()
 
 	c.Header("Content-Type", "application/pdf")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "cv-"+job.ID+".pdf"))

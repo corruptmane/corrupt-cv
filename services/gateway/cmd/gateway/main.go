@@ -126,12 +126,14 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("parse VALKEY_URL: %w", err)
 		}
-		client, err := valkey.NewClient(valkeyOpt)
+		var client valkey.Client
+		if otelEnabled {
+			client, err = valkeyotel.NewClient(valkeyOpt)
+		} else {
+			client, err = valkey.NewClient(valkeyOpt)
+		}
 		if err != nil {
 			return fmt.Errorf("connect valkey: %w", err)
-		}
-		if otelEnabled {
-			client = valkeyotel.WithClient(client)
 		}
 		valkeyClient = client
 		return nil
