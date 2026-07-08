@@ -50,7 +50,6 @@ func New(cfg Config) *Client {
 // Object is a streamed S3 object; the caller must Close the Body.
 type Object struct {
 	Body          io.ReadCloser
-	ContentType   string
 	ContentLength *int64
 }
 
@@ -71,7 +70,6 @@ func (c *Client) Get(ctx context.Context, key string) (*Object, error) {
 	}
 	return &Object{
 		Body:          out.Body,
-		ContentType:   aws.ToString(out.ContentType),
 		ContentLength: out.ContentLength,
 	}, nil
 }

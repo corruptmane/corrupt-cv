@@ -112,5 +112,46 @@ step "checking cv:apikey:$job_id is gone from valkey"
 exists="$(docker compose -f "$COMPOSE_FILE" exec -T valkey valkey-cli EXISTS "cv:apikey:$job_id" | tr -d '[:space:]')"
 [ "$exists" = "0" ] || fail "cv:apikey:$job_id still present in valkey (EXISTS=$exists)"
 
+# --- 7. Real-provider path: bogus key proves the Valkey handoff runs --------
+# The fake-model flow never writes an API key, so step 6 alone would pass even
+# if the Put/GETDEL handoff were broken. Submitting a real-provider job with a
+# bogus key exercises the full path: the ONLY way to get the provider's
+# "rejected the API key" error is gateway Put -> Valkey -> ai-processor GETDEL
+# -> provider call. (A broken Put would surface "API key no longer available"
+# instead.) Requires outbound network; skip with E2E_SKIP_PROVIDER=1.
+if [ "${E2E_SKIP_PROVIDER:-0}" = "1" ]; then
+    echo "==> skipping real-provider key-handoff check (E2E_SKIP_PROVIDER=1)"
+else
+    step "POST /jobs (anthropic model, bogus api key) — key-handoff check"
+    headers2="$(curl -sS -i -b "$COOKIES" -c "$COOKIES" -o /dev/stdout "$BASE/jobs" \
+        --data-urlencode "job_description=$JOB_DESCRIPTION" \
+        --data-urlencode "model_key=anthropic/claude-haiku-4-5" \
+        --data-urlencode "api_key=sk-ant-e2e-bogus-key-000")" || fail "POST /jobs (bogus key) failed"
+    location2="$(printf '%s' "$headers2" | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
+    job2_id="$(basename "$location2")"
+    [ -n "$job2_id" ] || fail "no job id from bogus-key submission"
+    echo "    job_id=$job2_id"
+
+    step "polling GET /api/jobs/$job2_id — expecting a clean provider-auth failure"
+    poll2_started=$(date +%s)
+    while true; do
+        body2="$(curl -fsS -b "$COOKIES" "$BASE/api/jobs/$job2_id")" || fail "GET /api/jobs/$job2_id failed"
+        status2="$(printf '%s' "$body2" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+        case "$status2" in
+            failed) break ;;
+            completed) fail "bogus-key job unexpectedly completed" ;;
+        esac
+        if [ $(($(date +%s) - poll2_started)) -ge 60 ]; then
+            fail "bogus-key job not terminal within 60s (last status: ${status2:-unknown})"
+        fi
+        sleep 2
+    done
+    printf '%s' "$body2" | grep -q "rejected the API key" \
+        || fail "expected provider-auth error (proves Put->GETDEL->provider); got: $body2"
+    exists2="$(docker compose -f "$COMPOSE_FILE" exec -T valkey valkey-cli EXISTS "cv:apikey:$job2_id" | tr -d '[:space:]')"
+    [ "$exists2" = "0" ] || fail "cv:apikey:$job2_id still present after terminal job (EXISTS=$exists2)"
+    echo "    key handoff verified (provider-auth failure surfaced, key consumed)"
+fi
+
 echo
-echo "PASS: full pipeline in $(elapsed) (job $job_id, ${size}-byte PDF, api key absent from valkey)"
+echo "PASS: full pipeline in $(elapsed) (job $job_id, ${size}-byte PDF, api key handoff verified)"

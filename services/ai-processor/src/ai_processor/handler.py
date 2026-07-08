@@ -23,6 +23,7 @@ from ai_processor.providers import UnsupportedProviderError, build_model
 
 API_KEY_MISSING_ERROR = "API key no longer available; please resubmit"
 UNKNOWN_MODEL_ERROR = "Unknown model selection; please choose a model from the catalog and resubmit"
+INTERNAL_ERROR = "CV structuring failed unexpectedly; please resubmit"
 AUTH_ERROR = "The AI provider rejected the API key; please check it and resubmit"
 BAD_REQUEST_ERROR = "The AI provider rejected the request; please try a different model"
 BAD_OUTPUT_ERROR = "The AI model returned an unusable response; please resubmit"
@@ -71,7 +72,11 @@ class JobHandler:
         if entry.provider != catalog_pb2.PROVIDER_FAKE:
             api_key = await self._claim_api_key(job_id)
 
-        model = build_model(entry, api_key)
+        try:
+            model = build_model(entry, api_key)
+        except UnsupportedProviderError:
+            log.warning("catalog entry has unsupported provider", job_id=job_id, model_key=request.model_key)
+            await self._fail(job_id, UNKNOWN_MODEL_ERROR)
         del api_key  # held in the model/provider for this attempt only
         cv = await self._structure(job_id, model, request)
 
@@ -107,8 +112,6 @@ class JobHandler:
                     career_text=request.career_text,
                     job_description=request.job_description,
                 )
-            except UnsupportedProviderError:
-                await self._fail(job_id, UNKNOWN_MODEL_ERROR)
             except UnexpectedModelBehavior:
                 log.warning("model returned unusable output", job_id=job_id)
                 await self._fail(job_id, BAD_OUTPUT_ERROR)
@@ -118,7 +121,11 @@ class JobHandler:
                         error = AUTH_ERROR if exc.status_code in (401, 403) else BAD_REQUEST_ERROR
                         log.warning("provider rejected request", job_id=job_id, status=exc.status_code)
                         await self._fail(job_id, error)
-                    raise
+                    # The API key was already claimed via GETDEL, so a nak/redelivery
+                    # can never succeed — it would only misreport the failure as a
+                    # missing key. Terminate with the real reason instead.
+                    log.exception("unexpected structuring failure", job_id=job_id)
+                    await self._fail(job_id, INTERNAL_ERROR)
                 if attempt + 1 == attempts:
                     log.warning("provider unavailable, retries exhausted", job_id=job_id, error=str(exc))
                     await self._fail(job_id, UNAVAILABLE_ERROR)

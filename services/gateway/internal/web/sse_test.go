@@ -117,3 +117,21 @@ func TestStatusFromJob(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusRankMonotonicity(t *testing.T) {
+	ranks := map[string]int{"pending": 0, "rendering": 1, "completed": 2, "failed": 2, "bogus": -1}
+	for status, want := range ranks {
+		if got := statusRank(status); got != want {
+			t.Errorf("statusRank(%q) = %d, want %d", status, got, want)
+		}
+	}
+	// Replayed history for a job already rendering must be suppressed:
+	// requested (pending) and structured (rendering) rank <= rendering.
+	last := statusRank("rendering")
+	if statusRank("pending") > last || statusRank("rendering") > last {
+		t.Error("replayed pending/rendering events would leak past a rendering baseline")
+	}
+	if statusRank("completed") <= last {
+		t.Error("forward transition to completed must pass the guard")
+	}
+}

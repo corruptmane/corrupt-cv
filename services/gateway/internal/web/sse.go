@@ -34,6 +34,21 @@ func downloadURL(jobID string) *string {
 	return &u
 }
 
+// statusRank orders statuses so replayed stream history can never move
+// a client backwards; both terminal states share the top rank.
+func statusRank(status string) int {
+	switch status {
+	case "pending":
+		return 0
+	case "rendering":
+		return 1
+	case "completed", "failed":
+		return 2
+	default:
+		return -1
+	}
+}
+
 // StatusFromJob maps the job's current database row to a StatusUpdate.
 func StatusFromJob(job *store.Job) StatusUpdate {
 	u := StatusUpdate{Status: job.Status, Error: job.Error}
@@ -92,6 +107,7 @@ func (s *Server) handleJobEvents(c *gin.Context) {
 	if current.Terminal() {
 		return
 	}
+	lastRank := statusRank(current.Status)
 
 	reqCtx := c.Request.Context()
 	cons, err := jetstream.OrderedJobConsumer(reqCtx, s.js, job.ID)
@@ -148,6 +164,15 @@ func (s *Server) handleJobEvents(c *gin.Context) {
 			}
 			if !known {
 				continue
+			}
+			// The ordered consumer replays the job's full history
+			// (DeliverAll closes the DB-read/consumer-start race); skip
+			// anything that would move the client backwards or repeat
+			// the state already sent.
+			if rank := statusRank(update.Status); rank <= lastRank {
+				continue
+			} else {
+				lastRank = rank
 			}
 			if err := writeSSE(w, update); err != nil {
 				return

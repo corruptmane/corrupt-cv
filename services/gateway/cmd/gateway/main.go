@@ -23,6 +23,7 @@ import (
 	valkey "github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeyotel"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/corruptmane/cv/services/gateway/internal/apikeys"
 	"github.com/corruptmane/cv/services/gateway/internal/catalog"
@@ -96,48 +97,73 @@ func run() error {
 	bootCtx, bootCancel := context.WithTimeout(rootCtx, 30*time.Second)
 	defer bootCancel()
 
-	// Postgres.
-	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
-	if err != nil {
-		return fmt.Errorf("parse DATABASE_URL: %w", err)
-	}
-	if otelEnabled {
-		poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
-	}
-	pool, err := pgxpool.NewWithConfig(bootCtx, poolCfg)
-	if err != nil {
-		return fmt.Errorf("create pgx pool: %w", err)
+	// Postgres, Valkey, and NATS are independent — connect concurrently so
+	// boot pays the slowest handshake, not the sum of all three.
+	var (
+		pool         *pgxpool.Pool
+		valkeyClient valkey.Client
+		nc           *nats.Conn
+	)
+	g, gctx := errgroup.WithContext(bootCtx)
+	g.Go(func() error {
+		poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("parse DATABASE_URL: %w", err)
+		}
+		if otelEnabled {
+			poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
+		}
+		if pool, err = pgxpool.NewWithConfig(gctx, poolCfg); err != nil {
+			return fmt.Errorf("create pgx pool: %w", err)
+		}
+		if err := pool.Ping(gctx); err != nil {
+			return fmt.Errorf("ping postgres: %w", err)
+		}
+		return nil
+	})
+	g.Go(func() error {
+		valkeyOpt, err := valkey.ParseURL(cfg.ValkeyURL)
+		if err != nil {
+			return fmt.Errorf("parse VALKEY_URL: %w", err)
+		}
+		client, err := valkey.NewClient(valkeyOpt)
+		if err != nil {
+			return fmt.Errorf("connect valkey: %w", err)
+		}
+		if otelEnabled {
+			client = valkeyotel.WithClient(client)
+		}
+		valkeyClient = client
+		return nil
+	})
+	g.Go(func() error {
+		var err error
+		if nc, err = nats.Connect(cfg.NATSURL,
+			nats.Name("cv-gateway"),
+			nats.MaxReconnects(-1),
+		); err != nil {
+			return fmt.Errorf("connect nats: %w", err)
+		}
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		// Close whatever did connect before the failure.
+		if pool != nil {
+			pool.Close()
+		}
+		if valkeyClient != nil {
+			valkeyClient.Close()
+		}
+		if nc != nil {
+			nc.Close()
+		}
+		return err
 	}
 	defer pool.Close()
-	if err := pool.Ping(bootCtx); err != nil {
-		return fmt.Errorf("ping postgres: %w", err)
-	}
-	st := store.New(pool)
-
-	// Valkey.
-	valkeyOpt, err := valkey.ParseURL(cfg.ValkeyURL)
-	if err != nil {
-		return fmt.Errorf("parse VALKEY_URL: %w", err)
-	}
-	valkeyClient, err := valkey.NewClient(valkeyOpt)
-	if err != nil {
-		return fmt.Errorf("connect valkey: %w", err)
-	}
-	if otelEnabled {
-		valkeyClient = valkeyotel.WithClient(valkeyClient)
-	}
 	defer valkeyClient.Close()
-	keys := apikeys.New(valkeyClient)
-
-	// NATS + JetStream.
-	nc, err := nats.Connect(cfg.NATSURL,
-		nats.Name("cv-gateway"),
-		nats.MaxReconnects(-1),
-	)
-	if err != nil {
-		return fmt.Errorf("connect nats: %w", err)
-	}
 	defer nc.Close()
+	st := store.New(pool)
+	keys := apikeys.New(valkeyClient)
 	js, err := natsjs.New(nc)
 	if err != nil {
 		return fmt.Errorf("create jetstream context: %w", err)

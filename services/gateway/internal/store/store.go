@@ -124,12 +124,6 @@ func (s *Store) GetJob(ctx context.Context, id, visitorID string) (*Job, error) 
 		`SELECT `+jobColumns+` FROM jobs WHERE id = $1 AND visitor_id = $2`, id, visitorID))
 }
 
-// GetJobAny returns the job regardless of owner (event-loop use only).
-func (s *Store) GetJobAny(ctx context.Context, id string) (*Job, error) {
-	return scanJob(s.pool.QueryRow(ctx,
-		`SELECT `+jobColumns+` FROM jobs WHERE id = $1`, id))
-}
-
 // ListJobs returns the visitor's most recent jobs, newest first.
 func (s *Store) ListJobs(ctx context.Context, visitorID string, limit int) ([]Job, error) {
 	if limit <= 0 {

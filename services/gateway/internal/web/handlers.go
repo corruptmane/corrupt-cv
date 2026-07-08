@@ -184,7 +184,7 @@ func (s *Server) handleJobCreate(c *gin.Context) {
 
 	jobDescription := strings.TrimSpace(c.PostForm("job_description"))
 	modelKey := strings.TrimSpace(c.PostForm("model_key"))
-	apiKey := c.PostForm("api_key")
+	apiKey := strings.TrimSpace(c.PostForm("api_key"))
 
 	if jobDescription == "" {
 		redirectWithError(c, "Job description must not be empty.")
