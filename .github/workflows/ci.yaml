@@ -144,10 +144,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install kustomize and kubeconform
-        run: |
-          curl -fsSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- 5.7.1 /usr/local/bin
-          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
+      # kustomize is preinstalled on ubuntu runners; only kubeconform is needed.
+      - name: Install kubeconform
+        run: curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
       - name: Validate manifests
         run: |
           set -euo pipefail
