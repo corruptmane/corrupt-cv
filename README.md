@@ -68,11 +68,24 @@ migrations/               plain-SQL goose migrations
 configs/model-catalog.yaml  seed for the NATS KV model catalog
 deploy/compose/           compose stack, migrate image, otel/grafana config
 scripts/e2e.sh            end-to-end smoke test
+deploy/k8s/               Flux-reconciled production manifests (homelab)
+infra/opentofu/           the only external infra: S3 + IAM + SSM handoff
 docs/adr/                 architecture decision records
-docs/roadmap.md           the platform track: k8s, Flux/Flagger, OpenTofu, billing
+docs/roadmap.md           the platform track and what's already delivered
 ```
+
+## Production (homelab)
+
+The app runs at `cv.corruptmane.xyz` on a Talos/Cilium cluster, deployed
+entirely by GitOps: a push to main builds images (CI), Flux image
+automation bumps the manifests, and Flagger canaries the gateway through
+Cilium Gateway API — traffic shifts 10% at a time, gated on live
+success-rate and p99 from VictoriaMetrics, with automatic rollback. See
+[ADR 0012](docs/adr/0012-k8s-flux-flagger-topology.md),
+[ADR 0013](docs/adr/0013-opentofu-s3-ssm-eso.md), and
+[docs/k8s/homelab-integration.md](docs/k8s/homelab-integration.md).
 
 ## Design docs
 
-- [ADRs](docs/adr/) — eleven records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, and sessions.
-- [Roadmap](docs/roadmap.md) — where this goes next: Kubernetes + Flux GitOps with Flagger canaries, OpenTofu on Hetzner k3s, multi-replica SSE, billing.
+- [ADRs](docs/adr/) — thirteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, and the Kubernetes/GitOps/canary platform.
+- [Roadmap](docs/roadmap.md) — delivered: k8s + Flux/Flagger + OpenTofu S3; next: multi-replica SSE fan-out, billing, protovalidate.
