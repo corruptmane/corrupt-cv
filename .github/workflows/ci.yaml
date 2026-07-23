@@ -20,6 +20,7 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       python: ${{ steps.filter.outputs.python }}
       k8s: ${{ steps.filter.outputs.k8s }}
+      images: ${{ steps.filter.outputs.images }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -42,6 +43,21 @@ jobs:
               - 'proto/**'
             k8s:
               - 'deploy/k8s/**'
+            # Anything that changes what ships inside an image. Bot commits
+            # from Flux image automation touch only deploy/k8s, so they must
+            # NOT trigger image builds — new builds mint new sortable tags,
+            # which the automation would commit again, forever.
+            images:
+              - 'services/**'
+              - 'libs/**'
+              - 'proto/**'
+              - 'migrations/**'
+              - 'configs/**'
+              - 'deploy/compose/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'scripts/**'
+              - '.github/workflows/ci.yaml'
 
   proto:
     needs: changes
@@ -96,6 +112,8 @@ jobs:
       - run: uv run pytest
 
   docker:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -158,6 +176,8 @@ jobs:
           done
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
