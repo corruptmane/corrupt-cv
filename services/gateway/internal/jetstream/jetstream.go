@@ -78,9 +78,12 @@ func Provision(ctx context.Context, js natsjs.JetStream) (natsjs.KeyValue, error
 			Durable:       ConsumerAIProc,
 			FilterSubject: "cv.*." + EventRequested,
 			AckPolicy:     natsjs.AckExplicitPolicy,
-			AckWait:       120 * time.Second,
-			MaxDeliver:    3,
-			BackOff:       []time.Duration{10 * time.Second, 30 * time.Second},
+			// No BackOff list: a JetStream backoff schedule REPLACES AckWait
+			// as the redelivery timer (backoff[0] would shrink the effective
+			// ack deadline to 10s and spuriously redeliver mid-LLM-call).
+			// AckWait + in_progress heartbeats govern instead.
+			AckWait:    120 * time.Second,
+			MaxDeliver: 3,
 		},
 		{
 			Durable:       ConsumerCVGen,
@@ -88,7 +91,6 @@ func Provision(ctx context.Context, js natsjs.JetStream) (natsjs.KeyValue, error
 			AckPolicy:     natsjs.AckExplicitPolicy,
 			AckWait:       60 * time.Second,
 			MaxDeliver:    3,
-			BackOff:       []time.Duration{10 * time.Second, 30 * time.Second},
 		},
 		{
 			Durable: ConsumerGatewayEvt,

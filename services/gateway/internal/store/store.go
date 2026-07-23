@@ -186,13 +186,26 @@ func (s *Store) MarkCompleted(ctx context.Context, id, pdfObjectKey string) (tim
 	return createdAt, true, nil
 }
 
+// MarkFailedProcessing applies a processing-stage failure. It only fires
+// while the job is still 'pending': once structuring succeeded (status
+// 'rendering' or beyond), a processing failure is stale by definition —
+// e.g. a spurious redelivery that lost the API-key claim racing the
+// render pipeline.
+func (s *Store) MarkFailedProcessing(ctx context.Context, id, errText string) (time.Time, bool, error) {
+	return s.markFailedWhere(ctx, id, errText, `status = 'pending'`)
+}
+
 // MarkFailed moves a non-terminal job to failed with an error message.
 // Return values follow MarkCompleted.
 func (s *Store) MarkFailed(ctx context.Context, id, errText string) (time.Time, bool, error) {
+	return s.markFailedWhere(ctx, id, errText, `status NOT IN ('completed', 'failed')`)
+}
+
+func (s *Store) markFailedWhere(ctx context.Context, id, errText, statusGuard string) (time.Time, bool, error) {
 	var createdAt time.Time
 	err := s.pool.QueryRow(ctx, `
 		UPDATE jobs SET status = 'failed', error = $2, updated_at = now()
-		WHERE id = $1 AND status NOT IN ('completed', 'failed')
+		WHERE id = $1 AND `+statusGuard+`
 		RETURNING created_at`,
 		id, errText).Scan(&createdAt)
 	if errors.Is(err, pgx.ErrNoRows) {

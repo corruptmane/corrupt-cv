@@ -202,7 +202,14 @@ func (r *Runner) handleMsg(msg natsjs.Msg) {
 			_ = msg.Term()
 			return
 		}
-		createdAt, applied, err := r.st.MarkFailed(ctx, jobID, ev.GetError())
+		// Processing-stage failures are only valid while the job is still
+		// pending; after `structured` landed they are stale (lost claim on
+		// a redelivery) and must not override the render pipeline.
+		mark := r.st.MarkFailed
+		if ev.GetStage() == eventsv1.JobStage_JOB_STAGE_PROCESSING {
+			mark = r.st.MarkFailedProcessing
+		}
+		createdAt, applied, err := mark(ctx, jobID, ev.GetError())
 		applyErr = err
 		if err == nil && applied {
 			r.recordTerminal(ctx, "failed", createdAt, ev.GetOccurredAt())
