@@ -48,9 +48,6 @@ spec:
               value: http://otel-collector-opentelemetry-collector.monitoring.svc:4318
             - name: OTEL_SERVICE_NAME
               value: gateway
-            # ROLLBACK DRILL: no-op change to trigger a new revision.
-            - name: DRILL
-              value: "1"
             # Distinguishes primary from canary pods in VictoriaMetrics
             # (service.instance.id -> instance label); the canary
             # MetricTemplates depend on it.

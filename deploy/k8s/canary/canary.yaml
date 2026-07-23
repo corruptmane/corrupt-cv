@@ -30,10 +30,7 @@ spec:
           name: gateway-success-rate
           namespace: cvgen
         thresholdRange:
-          # ROLLBACK DRILL: a success rate above 100% is unsatisfiable, so
-          # every analysis interval fails and Flagger rolls back after
-          # `threshold` failed checks. Revert this commit after the drill.
-          min: 101
+          min: 99
         interval: 1m
       - name: latency-p99
         templateRef:
