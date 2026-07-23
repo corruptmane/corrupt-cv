@@ -44,5 +44,7 @@ HTTPRoute** on purpose: Flagger creates `gateway` / `gateway-primary` /
 authored Deployment to zero after priming. Rollouts: images bumped by Flux
 image automation → Flagger shifts 10%-step traffic through the Cilium
 Gateway, gated on success-rate ≥99% and p99 ≤500ms measured from otelgin's
-`http.server.request.duration` (canary pods isolated via the `instance`
-label carrying the pod name).
+`http.server.request.duration` (canary pods isolated via the
+`service_instance_id` label carrying the pod name — the cluster vmsingle
+surfaces OTLP resource attributes as `service_name`/`service_instance_id`,
+not `job`/`instance`).

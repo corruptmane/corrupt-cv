@@ -23,7 +23,7 @@ flowchart LR
     S3 -->|GetObject| G
 ```
 
-Every job lives on its own subject space `cv.{job_id}.{requested|structured|rendered|failed}`; events carry the state, the browser tails them over SSE, and Postgres keeps the durable history. API keys exist only in Valkey, only for 15 minutes, and are atomically consumed (`GETDEL`) exactly once. The details are in the [ADRs](docs/adr/).
+Every job lives on its own subject space `cv.{job_id}.{requested|structured|rendered|failed}`; events carry the state, the browser tails them over SSE, and Postgres keeps the durable history. API keys exist only in Valkey, only for 15 minutes, and are atomically consumed (`GETDEL`) exactly once. The Python services speak NATS through [natsio](https://github.com/corruptmane/natsio), the author's own zero-dependency asyncio client ([ADR 0014](docs/adr/0014-natsio-client.md)); the Go gateway uses nats.go. The details are in the [ADRs](docs/adr/).
 
 ## Quickstart
 
@@ -87,5 +87,5 @@ success-rate and p99 from VictoriaMetrics, with automatic rollback. See
 
 ## Design docs
 
-- [ADRs](docs/adr/) — thirteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, and the Kubernetes/GitOps/canary platform.
+- [ADRs](docs/adr/) — fourteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, the Kubernetes/GitOps/canary platform, and the natsio client.
 - [Roadmap](docs/roadmap.md) — delivered: k8s + Flux/Flagger + OpenTofu S3; next: multi-replica SSE fan-out, billing, protovalidate.
