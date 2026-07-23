@@ -4,4 +4,4 @@ resources:
   - job.yaml
 images:
   - name: ghcr.io/corruptmane/cvgen-migrate
-    newTag: main-12-4cedce8 # {"$imagepolicy": "flux-system:cvgen-migrate:tag"}
+    newTag: main-14-c000f05 # {"$imagepolicy": "flux-system:cvgen-migrate:tag"}
