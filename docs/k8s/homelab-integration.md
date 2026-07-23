@@ -10,12 +10,12 @@ repo under `apps/cvgen/`.
 
 1. **GHCR visibility**: make the four `cvgen-*` packages public (Settings →
    Packages), or add a pull secret + `secretRef` on each `ImageRepository`.
-2. **Deploy key**: generate an SSH key, add it to `corruptmane/cv` as a
+2. **Deploy key**: generate an SSH key, add it to `corruptmane/corrupt-cv` as a
    deploy key **with write access** (image automation pushes tag bumps),
    and create the Flux secret:
    ```sh
    flux create secret git cvgen-deploy-key \
-     --url=ssh://git@github.com/corruptmane/cv --private-key-file=<key>
+     --url=ssh://git@github.com/corruptmane/corrupt-cv --private-key-file=<key>
    ```
 3. **OpenTofu**: `infra/opentofu/` applied (bucket + IAM + the six
    `/homelab/cvgen-*` SSM parameters that the `cvgen-aws` ExternalSecret
