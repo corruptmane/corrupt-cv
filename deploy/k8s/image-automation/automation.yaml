@@ -1,0 +1,29 @@
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: cvgen
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: cvgen
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: flux@corruptmane.xyz
+        name: fluxcdbot
+      messageTemplate: |
+        deploy: bump images to latest CI build
+
+        {{ range .Changed.Changes -}}
+        {{ .OldValue }} -> {{ .NewValue }}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    path: ./deploy/k8s
+    strategy: Setters

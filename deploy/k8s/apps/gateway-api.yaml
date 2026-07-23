@@ -1,0 +1,30 @@
+---
+# The HTTPRoute is deliberately absent: Flagger (gatewayapi:v1 provider)
+# creates and owns it, moving weighted backendRefs between the primary and
+# canary Services during analysis. external-dns picks the hostname up from
+# that HTTPRoute and manages the Cloudflare record.
+#
+# The :80 listener is a deviation from the homelab's https-only norm: the
+# Flagger loadtester drives synthetic canary traffic in-cluster through
+# the Gateway (cilium-gateway-cvgen-gateway.cvgen.svc) where TLS for the
+# public hostname cannot verify.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: cvgen-gateway
+  namespace: cvgen
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: cv.corruptmane.xyz
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: cv.corruptmane.xyz
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: cvgen-tls

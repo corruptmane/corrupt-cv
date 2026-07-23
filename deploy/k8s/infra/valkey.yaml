@@ -1,0 +1,54 @@
+---
+# Ephemeral by design: valkey only holds short-TTL BYO API keys in transit
+# (SET EX by the gateway, GETDEL by ai-processor; ADR 0006). Losing the pod
+# just means resubmitting an in-flight job, so no PVC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: cvgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: valkey
+  template:
+    metadata:
+      labels:
+        app: valkey
+    spec:
+      containers:
+        - name: valkey
+          image: valkey/valkey:8-alpine
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: cvgen
+spec:
+  selector:
+    app: valkey
+  ports:
+    - port: 6379
+      targetPort: 6379

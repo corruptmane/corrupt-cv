@@ -1,0 +1,17 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - externalsecret.yaml
+  - certificate.yaml
+  - gateway-api.yaml
+  - gateway.yaml
+  - ai-processor.yaml
+  - cv-generator.yaml
+images:
+  - name: ghcr.io/corruptmane/cvgen-gateway
+    newTag: latest # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
+  - name: ghcr.io/corruptmane/cvgen-ai-processor
+    newTag: latest # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
+  - name: ghcr.io/corruptmane/cvgen-cv-generator
+    newTag: latest # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}

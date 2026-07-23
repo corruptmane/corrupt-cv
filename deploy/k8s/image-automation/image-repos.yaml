@@ -1,0 +1,32 @@
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: cvgen-gateway
+spec:
+  image: ghcr.io/corruptmane/cvgen-gateway
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: cvgen-ai-processor
+spec:
+  image: ghcr.io/corruptmane/cvgen-ai-processor
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: cvgen-cv-generator
+spec:
+  image: ghcr.io/corruptmane/cvgen-cv-generator
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: cvgen-migrate
+spec:
+  image: ghcr.io/corruptmane/cvgen-migrate
+  interval: 5m

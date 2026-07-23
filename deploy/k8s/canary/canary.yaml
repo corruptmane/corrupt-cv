@@ -1,0 +1,50 @@
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: gateway
+  namespace: cvgen
+spec:
+  provider: "gatewayapi:v1"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  progressDeadlineSeconds: 600
+  service:
+    port: 80
+    targetPort: 8080
+    hosts:
+      - cv.corruptmane.xyz
+    gatewayRefs:
+      - name: cvgen-gateway
+        namespace: cvgen
+  analysis:
+    interval: 1m
+    threshold: 5
+    maxWeight: 50
+    stepWeight: 10
+    metrics:
+      - name: success-rate
+        templateRef:
+          name: gateway-success-rate
+          namespace: cvgen
+        thresholdRange:
+          min: 99
+        interval: 1m
+      - name: latency-p99
+        templateRef:
+          name: gateway-latency
+          namespace: cvgen
+        thresholdRange:
+          max: 0.5
+        interval: 1m
+    webhooks:
+      # Synthetic traffic through the Gateway so weighted routing applies;
+      # a homelab has no organic load during a 10-minute analysis window.
+      - name: load
+        type: rollout
+        url: http://flagger-loadtester.cvgen/
+        timeout: 15s
+        metadata:
+          cmd: "hey -z 1m -q 10 -c 2 -host cv.corruptmane.xyz http://cilium-gateway-cvgen-gateway.cvgen.svc/"

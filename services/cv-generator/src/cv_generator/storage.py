@@ -21,8 +21,7 @@ class Storage:
             root="/",
             # opendal operator options are string-typed end to end; booleans
             # panic in the Rust layer.
-            # Swift s3api serves buckets on the path, not on a subdomain.
-            enable_virtual_host_style="false",
+            enable_virtual_host_style="false" if settings.s3_use_path_style else "true",
             # Never pick up ambient AWS config/credentials; the settings are authoritative.
             disable_config_load="true",
             disable_ec2_metadata="true",

@@ -1,0 +1,18 @@
+---
+# CloudNativePG cluster; the operator generates secret cvgen-db-app whose
+# "uri" key is a complete DSN consumed as DATABASE_URL by the gateway and
+# the migration Job.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cvgen-db
+  namespace: cvgen
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+    storageClass: longhorn
+  bootstrap:
+    initdb:
+      database: cvgen
+      owner: cvgen

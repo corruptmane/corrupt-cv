@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cv-generator
+  namespace: cvgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cv-generator
+  template:
+    metadata:
+      labels:
+        app: cv-generator
+    spec:
+      containers:
+        - name: cv-generator
+          image: ghcr.io/corruptmane/cvgen-cv-generator
+          ports:
+            - name: ops
+              containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: cvgen-aws
+          env:
+            - name: NATS_URL
+              value: nats://nats.cvgen.svc:4222
+            - name: OPS_PORT
+              value: "9090"
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TYPST_TEMPLATE_PATH
+              value: /app/services/cv-generator/assets/cv.typ
+            - name: S3_USE_PATH_STYLE
+              value: "false"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector-opentelemetry-collector.monitoring.svc:4318
+            - name: OTEL_SERVICE_NAME
+              value: cv-generator
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ops
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: ops
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

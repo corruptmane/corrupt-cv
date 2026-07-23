@@ -1,0 +1,73 @@
+---
+# No Service here: Flagger creates gateway / gateway-primary /
+# gateway-canary Services from the Canary spec and scales this Deployment
+# to zero once the primary is up.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: cvgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/corruptmane/cvgen-gateway
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: ops
+              containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: cvgen-aws
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cvgen-db-app
+                  key: uri
+            - name: NATS_URL
+              value: nats://nats.cvgen.svc:4222
+            - name: VALKEY_URL
+              value: valkey://valkey.cvgen.svc:6379
+            - name: MODEL_CATALOG_PATH
+              value: /etc/cvgen/model-catalog.yaml
+            - name: S3_USE_PATH_STYLE
+              value: "false"
+            - name: LOG_LEVEL
+              value: INFO
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector-opentelemetry-collector.monitoring.svc:4318
+            - name: OTEL_SERVICE_NAME
+              value: gateway
+            # Distinguishes primary from canary pods in VictoriaMetrics
+            # (service.instance.id -> instance label); the canary
+            # MetricTemplates depend on it.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.instance.id=$(POD_NAME)
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ops
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: ops
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

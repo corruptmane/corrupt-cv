@@ -1,0 +1,30 @@
+---
+# Reconciled by a Flux Kustomization with force: true — the immutable Job
+# is recreated whenever the image tag changes, and wait: true gates the
+# apps Kustomization on migration completion.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cvgen-migrate
+  namespace: cvgen
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: goose
+          image: ghcr.io/corruptmane/cvgen-migrate
+          args: ["-dir", "/migrations", "postgres", "$(DATABASE_URL)", "up"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cvgen-db-app
+                  key: uri
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi

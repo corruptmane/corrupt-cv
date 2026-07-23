@@ -1,0 +1,13 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cvgen-tls
+  namespace: cvgen
+spec:
+  secretName: cvgen-tls
+  dnsNames:
+    - cv.corruptmane.xyz
+  issuerRef:
+    name: letsencrypt-production
+    kind: ClusterIssuer
