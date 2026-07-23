@@ -1,8 +1,10 @@
 ---
 # Both templates read otelgin's http.server.request.duration histogram from
-# VictoriaMetrics (Prometheus naming enabled server-side). Canary pods are
-# isolated from the primary via the instance label, which the gateway
-# Deployment populates with the pod name (service.instance.id).
+# VictoriaMetrics (Prometheus naming enabled server-side; resource
+# attributes surface as service_name / service_instance_id labels —
+# verified against the live vmsingle). Canary pods are isolated from the
+# primary via service_instance_id, which the gateway Deployment populates
+# with the pod name.
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
 metadata:
@@ -13,9 +15,9 @@ spec:
     type: prometheus
     address: http://vmsingle-victoria-metrics-victoria-metrics-k8s-stack.monitoring.svc:8428
   query: |
-    100 * sum(rate(http_server_request_duration_seconds_count{job="gateway",instance=~"{{ target }}-.*",instance!~"{{ target }}-primary-.*",http_response_status_code!~"5.."}[{{ interval }}]))
+    100 * sum(rate(http_server_request_duration_seconds_count{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*",http_response_status_code!~"5.."}[{{ interval }}]))
     /
-    sum(rate(http_server_request_duration_seconds_count{job="gateway",instance=~"{{ target }}-.*",instance!~"{{ target }}-primary-.*"}[{{ interval }}]))
+    sum(rate(http_server_request_duration_seconds_count{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*"}[{{ interval }}]))
 ---
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
@@ -27,4 +29,4 @@ spec:
     type: prometheus
     address: http://vmsingle-victoria-metrics-victoria-metrics-k8s-stack.monitoring.svc:8428
   query: |
-    histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="gateway",instance=~"{{ target }}-.*",instance!~"{{ target }}-primary-.*"}[{{ interval }}])))
+    histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*"}[{{ interval }}])))
