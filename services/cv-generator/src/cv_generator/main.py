@@ -40,12 +40,12 @@ async def _run() -> None:
     nc = await connect(settings.nats_url, name=SERVICE)
     try:
         js = nc.jetstream()
-        psub = await bind_pull_consumer(js, DURABLE_CV_GENERATOR)
+        consumer = await bind_pull_consumer(js, DURABLE_CV_GENERATOR)
         ready = True
         log.info("service ready", nats_url=settings.nats_url, ops_port=settings.ops_port)
 
         handler = JobHandler(js=js, renderer=renderer, storage=storage)
-        consume = asyncio.create_task(run_pull_loop(psub, handler, service=SERVICE, heartbeat_s=30))
+        consume = asyncio.create_task(run_pull_loop(consumer, handler, service=SERVICE, heartbeat_s=30))
         stop_wait = asyncio.create_task(stop.wait())
         try:
             done, _ = await asyncio.wait({consume, stop_wait}, return_when=asyncio.FIRST_COMPLETED)

@@ -1,7 +1,8 @@
 """Handler unit tests with fake js/kv/valkey objects (no network)."""
 
+from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from ai_processor.handler import API_KEY_MISSING_ERROR, UNKNOWN_MODEL_ERROR, JobHandler, apikey_key
@@ -10,21 +11,34 @@ from cv_shared.proto_convert import cv_from_proto
 from cvgen.catalog.v1 import catalog_pb2
 from cvgen.cv.v1 import cv_pb2
 from cvgen.events.v1 import events_pb2
-from nats.aio.msg import Msg
-from nats.js import JetStreamContext
-from nats.js.errors import KeyNotFoundError
-from nats.js.kv import KeyValue
+from natsio.jetstream import JsMsg
+from natsio.jetstream.context import JetStreamContext
+from natsio.kv import KeyNotFoundError, KeyValue
 from valkey.asyncio import Valkey
 
 JOB_ID = "0f9b2f6e-6f0f-4a63-9a1c-1c2d3e4f5a6b"
 
 
+@dataclass
+class FakeMsg:
+    subject: str
+    data: bytes
+    headers: dict[str, str] | None = None
+
+
 class FakeJetStream:
     def __init__(self) -> None:
-        self.published: list[tuple[str, bytes, dict[str, str] | None]] = []
+        self.published: list[tuple[str, bytes, dict[str, str] | None, str | None]] = []
 
-    async def publish(self, subject: str, payload: bytes, headers: dict[str, str] | None = None) -> None:
-        self.published.append((subject, payload, headers))
+    async def publish(
+        self,
+        subject: str,
+        payload: bytes,
+        *,
+        headers: dict[str, str] | None = None,
+        msg_id: str | None = None,
+    ) -> None:
+        self.published.append((subject, payload, headers, msg_id))
 
 
 class FakeKV:
@@ -53,7 +67,7 @@ def _catalog_entry(provider: catalog_pb2.Provider.ValueType, key: str, model_id:
     ).SerializeToString()
 
 
-def _requested_msg(model_key: str) -> Msg:
+def _requested_msg(model_key: str) -> JsMsg:
     request = events_pb2.JobRequested(
         job_id=JOB_ID,
         career_text="Six years of backend work with Python, Go, NATS and Kubernetes.",
@@ -67,7 +81,7 @@ def _requested_msg(model_key: str) -> Msg:
         model_key=model_key,
     )
     request.occurred_at.GetCurrentTime()
-    return Msg(_client=cast(Any, None), subject=f"cv.{JOB_ID}.requested", data=request.SerializeToString())
+    return cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.requested", data=request.SerializeToString()))
 
 
 def _handler(js: FakeJetStream, kv: FakeKV, valkey: FakeValkey) -> JobHandler:
@@ -81,10 +95,9 @@ def _handler(js: FakeJetStream, kv: FakeKV, valkey: FakeValkey) -> JobHandler:
 
 def _single_failure(js: FakeJetStream) -> events_pb2.JobFailed:
     assert len(js.published) == 1
-    subject, payload, headers = js.published[0]
+    subject, payload, _headers, msg_id = js.published[0]
     assert subject == f"cv.{JOB_ID}.failed"
-    assert headers is not None
-    assert headers["Nats-Msg-Id"] == f"{JOB_ID}:failed"
+    assert msg_id == f"{JOB_ID}:failed"
     failed = events_pb2.JobFailed()
     failed.ParseFromString(payload)
     return failed
@@ -129,10 +142,9 @@ async def test_fake_provider_runs_agent_and_publishes_job_structured() -> None:
 
     assert valkey.getdel_calls == []  # FAKE provider must skip the key handoff
     assert len(js.published) == 1
-    subject, payload, headers = js.published[0]
+    subject, payload, _headers, msg_id = js.published[0]
     assert subject == f"cv.{JOB_ID}.structured"
-    assert headers is not None
-    assert headers["Nats-Msg-Id"] == f"{JOB_ID}:structured"
+    assert msg_id == f"{JOB_ID}:structured"
 
     structured = events_pb2.JobStructured()
     structured.ParseFromString(payload)

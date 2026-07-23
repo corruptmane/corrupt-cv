@@ -9,8 +9,8 @@ from cv_shared.natsx import EVENT_FAILED, EVENT_RENDERED, publish_event
 from cv_shared.proto_convert import cv_from_proto
 from cv_shared.typst_json import cv_to_typst_json
 from cvgen.events.v1 import events_pb2
-from nats.aio.msg import Msg
-from nats.js import JetStreamContext
+from natsio.jetstream import JsMsg
+from natsio.jetstream.context import JetStreamContext
 from opentelemetry import trace
 
 from cv_generator.storage import object_key
@@ -37,7 +37,7 @@ class JobHandler:
         self._renderer = renderer
         self._storage = storage
 
-    async def __call__(self, msg: Msg) -> None:
+    async def __call__(self, msg: JsMsg) -> None:
         structured = events_pb2.JobStructured()
         structured.ParseFromString(msg.data)
         job_id = structured.job_id

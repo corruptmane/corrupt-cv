@@ -289,7 +289,7 @@ name = "cv-shared"
 version = "0.1.0"
 source = { editable = "libs/python/cv-shared" }
 dependencies = [
-    { name = "nats-py" },
+    { name = "natsio" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
@@ -301,7 +301,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nats-py", specifier = ">=2.11" },
+    { name = "natsio", specifier = ">=1.0.0" },
     { name = "opentelemetry-api", specifier = ">=1.36" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.36" },
     { name = "opentelemetry-sdk", specifier = ">=1.36" },
@@ -590,12 +590,12 @@ wheels = [
 ]
 
 [[package]]
-name = "nats-py"
-version = "2.15.0"
+name = "natsio"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/02/f0/fc5e93f2b0dd14a202590ad9d30eda1955ea872039b5204357348d0f4b1e/nats_py-2.15.0.tar.gz", hash = "sha256:6622c547d9a7d2313d9c147d46c386188f4ec2c7b5c9f9a0438a4d1b55f54a93", size = 75995, upload-time = "2026-06-05T07:34:03.904Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/20/73fe75fc638cf29053eee145191fa7e28f6cd915c1a5b44b6215e7be05e9/natsio-1.0.0.tar.gz", hash = "sha256:b9e2d42eee9f6a28b6f0e5a18538abac81dcdba854abe8e2de4f30d7f29e5a47", size = 119815, upload-time = "2026-07-23T10:07:28.466Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/db/a8/b55606c7c621fb813c8ec78baf201d2c78bf6051091ec0c7ada572999e95/nats_py-2.15.0-py3-none-any.whl", hash = "sha256:9f8d36aa52a9926a88b8f1d70cf1fdce0ad387941479b500ee9ab3e51073cefd", size = 90334, upload-time = "2026-06-05T07:34:02.81Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/2b/be0889d218f98517716a2e59f68e83a386bfa23774ce365e74e8c8ab5dc0/natsio-1.0.0-py3-none-any.whl", hash = "sha256:121d4b893eda3c9a96c6b82c993ff7e94c338899d9b2c4d8907e1604a913f31f", size = 147284, upload-time = "2026-07-23T10:07:26.85Z" },
 ]
 
 [[package]]

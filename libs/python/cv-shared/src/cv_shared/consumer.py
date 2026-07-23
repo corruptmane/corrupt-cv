@@ -4,28 +4,27 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 import structlog
-from nats.aio.msg import Msg
-from nats.js import JetStreamContext
+from natsio.jetstream import Consumer, JsMsg
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from cv_shared.natsx import extract_trace_context, job_id_from_subject
 
-Handler = Callable[[Msg], Awaitable[None]]
+Handler = Callable[[JsMsg], Awaitable[None]]
 
 
 class TerminalError(Exception):
     """Raised by handlers to stop redelivery; the handler has already reported the failure."""
 
 
-async def _heartbeat(msg: Msg, interval_s: float) -> None:
+async def _heartbeat(msg: JsMsg, interval_s: float) -> None:
     while True:
         await asyncio.sleep(interval_s)
         await msg.in_progress()
 
 
 async def run_pull_loop(
-    psub: JetStreamContext.PullSubscription,
+    consumer: Consumer,
     handler: Handler,
     *,
     service: str,
@@ -44,7 +43,10 @@ async def run_pull_loop(
     tracer = trace.get_tracer(service)
     while True:
         try:
-            msgs = await psub.fetch(1, timeout=fetch_timeout_s)
+            # A quiet interval yields an empty list, not an exception; the
+            # defensive catch covers request-level natsio timeouts (which
+            # subclass the builtin TimeoutError).
+            msgs = await consumer.fetch(1, timeout=fetch_timeout_s)
         except TimeoutError:
             continue
         for msg in msgs:
@@ -67,7 +69,7 @@ async def run_pull_loop(
                     span.record_exception(exc)
                     span.set_status(Status(StatusCode.ERROR, str(exc)))
                     log.warning("terminal failure", subject=msg.subject, error=str(exc))
-                    await msg.term()
+                    await msg.term(str(exc))
                 except Exception as exc:
                     span.record_exception(exc)
                     span.set_status(Status(StatusCode.ERROR, str(exc)))

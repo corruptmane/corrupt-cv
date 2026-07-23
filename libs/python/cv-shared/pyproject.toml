@@ -7,11 +7,11 @@ dependencies = [
     "pydantic[email]>=2.11",
     "pydantic-settings>=2.10",
     "protobuf>=6.31",
-    "nats-py>=2.11",
     "structlog>=25.4",
     "opentelemetry-api>=1.36",
     "opentelemetry-sdk>=1.36",
     "opentelemetry-exporter-otlp-proto-http>=1.36",
+    "natsio>=1.0.0",
 ]
 
 [build-system]

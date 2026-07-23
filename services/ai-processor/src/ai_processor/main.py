@@ -39,13 +39,13 @@ async def _run() -> None:
     valkey = Valkey.from_url(settings.valkey_url)
     try:
         js = nc.jetstream()
-        psub = await bind_pull_consumer(js, DURABLE_AI_PROCESSOR)
+        consumer = await bind_pull_consumer(js, DURABLE_AI_PROCESSOR)
         kv = await bind_kv(js, KV_MODEL_CATALOG)
         ready = True
         log.info("service ready", nats_url=settings.nats_url, ops_port=settings.ops_port)
 
         handler = JobHandler(js=js, kv=kv, valkey=valkey)
-        consume = asyncio.create_task(run_pull_loop(psub, handler, service=SERVICE, heartbeat_s=30))
+        consume = asyncio.create_task(run_pull_loop(consumer, handler, service=SERVICE, heartbeat_s=30))
         stop_wait = asyncio.create_task(stop.wait())
         try:
             done, _ = await asyncio.wait({consume, stop_wait}, return_when=asyncio.FIRST_COMPLETED)

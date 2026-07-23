@@ -1,6 +1,7 @@
 """Handler unit tests with fake js/renderer/storage objects (no network)."""
 
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import cast
 
 import pytest
 import typst
@@ -8,18 +9,32 @@ from cv_generator.handler import RENDER_ERROR, JobHandler
 from cv_shared.consumer import TerminalError
 from cvgen.cv.v1 import cv_pb2
 from cvgen.events.v1 import events_pb2
-from nats.aio.msg import Msg
-from nats.js import JetStreamContext
+from natsio.jetstream import JsMsg
+from natsio.jetstream.context import JetStreamContext
 
 JOB_ID = "7a1e5d70-9c2b-4f4e-8a3d-2b1c0d9e8f7a"
 
 
+@dataclass
+class FakeMsg:
+    subject: str
+    data: bytes
+    headers: dict[str, str] | None = None
+
+
 class FakeJetStream:
     def __init__(self) -> None:
-        self.published: list[tuple[str, bytes, dict[str, str] | None]] = []
+        self.published: list[tuple[str, bytes, dict[str, str] | None, str | None]] = []
 
-    async def publish(self, subject: str, payload: bytes, headers: dict[str, str] | None = None) -> None:
-        self.published.append((subject, payload, headers))
+    async def publish(
+        self,
+        subject: str,
+        payload: bytes,
+        *,
+        headers: dict[str, str] | None = None,
+        msg_id: str | None = None,
+    ) -> None:
+        self.published.append((subject, payload, headers, msg_id))
 
 
 class FakeRenderer:
@@ -45,7 +60,7 @@ class FakeStorage:
         self.written.append((key, data))
 
 
-def _structured_msg() -> Msg:
+def _structured_msg() -> JsMsg:
     structured = events_pb2.JobStructured(
         job_id=JOB_ID,
         cv=cv_pb2.CV(
@@ -70,7 +85,7 @@ def _structured_msg() -> Msg:
         ),
     )
     structured.occurred_at.GetCurrentTime()
-    return Msg(_client=cast(Any, None), subject=f"cv.{JOB_ID}.structured", data=structured.SerializeToString())
+    return cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.structured", data=structured.SerializeToString()))
 
 
 def _handler(js: FakeJetStream, renderer: FakeRenderer, storage: FakeStorage) -> JobHandler:
@@ -89,10 +104,9 @@ async def test_success_uploads_pdf_and_publishes_job_rendered() -> None:
     assert storage.written == [(f"cvs/{JOB_ID}.pdf", b"%PDF-fake" + b"x" * 64)]
 
     assert len(js.published) == 1
-    subject, payload, headers = js.published[0]
+    subject, payload, _headers, msg_id = js.published[0]
     assert subject == f"cv.{JOB_ID}.rendered"
-    assert headers is not None
-    assert headers["Nats-Msg-Id"] == f"{JOB_ID}:rendered"
+    assert msg_id == f"{JOB_ID}:rendered"
     rendered = events_pb2.JobRendered()
     rendered.ParseFromString(payload)
     assert rendered.job_id == JOB_ID
@@ -110,7 +124,7 @@ async def test_typst_error_is_terminal_and_publishes_job_failed() -> None:
 
     assert storage.written == []
     assert len(js.published) == 1
-    subject, payload, _headers = js.published[0]
+    subject, payload, _headers, _msg_id = js.published[0]
     assert subject == f"cv.{JOB_ID}.failed"
     failed = events_pb2.JobFailed()
     failed.ParseFromString(payload)

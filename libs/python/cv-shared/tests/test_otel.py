@@ -9,7 +9,8 @@ from cv_shared import logging as cv_logging
 from cv_shared import otel
 from cv_shared.consumer import TerminalError, run_pull_loop
 from cv_shared.natsx import publish_event
-from nats.js import JetStreamContext
+from natsio.jetstream import Consumer
+from natsio.jetstream.context import JetStreamContext
 from opentelemetry import trace
 from opentelemetry._logs import SeverityNumber
 from opentelemetry.sdk._logs import LoggerProvider
@@ -140,8 +141,9 @@ class FakeMsg:
     async def ack(self) -> None:
         self.acked = True
 
-    async def term(self) -> None:
+    async def term(self, reason: str | None = None) -> None:
         self.termed = True
+        self.term_reason = reason
 
     async def nak(self, delay: float | None = None) -> None:
         self.naks.append(delay)
@@ -150,20 +152,20 @@ class FakeMsg:
         pass
 
 
-class FakePsub:
+class FakeConsumer:
     def __init__(self, msgs: list[FakeMsg]) -> None:
         self._msgs = list(msgs)
 
-    async def fetch(self, batch: int, timeout: float) -> list[FakeMsg]:  # noqa: ASYNC109 - mirrors nats-py fetch()
+    async def fetch(self, max_messages: int, timeout: float) -> list[FakeMsg]:  # noqa: ASYNC109 - mirrors natsio fetch()
         if not self._msgs:
             raise asyncio.CancelledError
         return [self._msgs.pop(0)]
 
 
 async def _run_loop(msg: FakeMsg, handler: Any) -> None:
-    psub = cast(JetStreamContext.PullSubscription, FakePsub([msg]))
+    consumer = cast(Consumer, FakeConsumer([msg]))
     with pytest.raises(asyncio.CancelledError):
-        await run_pull_loop(psub, handler, service="test-service", fetch_timeout_s=0.01)
+        await run_pull_loop(consumer, handler, service="test-service", fetch_timeout_s=0.01)
 
 
 async def test_consume_span_kind_and_attributes(span_exporter: InMemorySpanExporter) -> None:
@@ -217,11 +219,18 @@ async def test_consume_span_records_nak_error(span_exporter: InMemorySpanExporte
 
 
 async def test_publish_event_producer_span_parents_injected_context(span_exporter: InMemorySpanExporter) -> None:
-    published: list[tuple[str, bytes, dict[str, str]]] = []
+    published: list[tuple[str, bytes, dict[str, str], str | None]] = []
 
     class FakeJetStream:
-        async def publish(self, subject: str, payload: bytes, headers: dict[str, str]) -> None:
-            published.append((subject, payload, headers))
+        async def publish(
+            self,
+            subject: str,
+            payload: bytes,
+            *,
+            headers: dict[str, str],
+            msg_id: str | None = None,
+        ) -> None:
+            published.append((subject, payload, headers, msg_id))
 
     await publish_event(cast(JetStreamContext, FakeJetStream()), JOB_ID, "structured", b"payload")
 
@@ -234,10 +243,10 @@ async def test_publish_event_producer_span_parents_injected_context(span_exporte
         "cvgen.job_id": JOB_ID,
     }
 
-    (subject, payload, headers) = published[0]
+    (subject, payload, headers, msg_id) = published[0]
     assert subject == f"cv.{JOB_ID}.structured"
     assert payload == b"payload"
-    assert headers["Nats-Msg-Id"] == f"{JOB_ID}:structured"
+    assert msg_id == f"{JOB_ID}:structured"
     # inject happened inside the span: downstream consumers parent onto the producer span
     ctx = span.get_span_context()
     assert ctx is not None

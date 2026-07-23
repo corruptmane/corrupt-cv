@@ -10,10 +10,9 @@ from cv_shared.natsx import EVENT_FAILED, EVENT_STRUCTURED, publish_event
 from cv_shared.proto_convert import cv_to_proto
 from cvgen.catalog.v1 import catalog_pb2
 from cvgen.events.v1 import events_pb2
-from nats.aio.msg import Msg
-from nats.js import JetStreamContext
-from nats.js.errors import KeyNotFoundError
-from nats.js.kv import KeyValue
+from natsio.jetstream import JsMsg
+from natsio.jetstream.context import JetStreamContext
+from natsio.kv import KeyNotFoundError, KeyValue
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models import Model
 from valkey.asyncio import Valkey
@@ -61,7 +60,7 @@ class JobHandler:
         self._valkey = valkey
         self._retry_delays_s = retry_delays_s
 
-    async def __call__(self, msg: Msg) -> None:
+    async def __call__(self, msg: JsMsg) -> None:
         request = events_pb2.JobRequested()
         request.ParseFromString(msg.data)
         job_id = request.job_id
@@ -89,8 +88,6 @@ class JobHandler:
         try:
             kv_entry = await self._kv.get(model_key)
         except KeyNotFoundError:
-            await self._fail(job_id, UNKNOWN_MODEL_ERROR)
-        if kv_entry.value is None:
             await self._fail(job_id, UNKNOWN_MODEL_ERROR)
         entry = catalog_pb2.ModelCatalogEntry()
         entry.ParseFromString(kv_entry.value)

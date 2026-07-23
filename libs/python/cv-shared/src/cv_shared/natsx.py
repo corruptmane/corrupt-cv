@@ -1,4 +1,4 @@
-"""NATS helpers for the Python services.
+"""NATS helpers for the Python services, built on natsio.
 
 The gateway is the single JetStream authority: it creates the stream, the
 durable consumers, and the KV buckets at boot. Python services only bind
@@ -9,12 +9,12 @@ Binds retry with backoff so compose start order isn't load-bearing.
 import asyncio
 from collections.abc import Mapping
 
-import nats
+import natsio
 import structlog
-from nats.aio.client import Client
-from nats.js import JetStreamContext
-from nats.js.errors import BucketNotFoundError, NotFoundError
-from nats.js.kv import KeyValue
+from natsio.client import Client
+from natsio.jetstream import Consumer, ConsumerNotFoundError, StreamNotFoundError
+from natsio.jetstream.context import JetStreamContext
+from natsio.kv import BucketNotFoundError, KeyValue
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
 from opentelemetry.trace import SpanKind
@@ -29,8 +29,6 @@ EVENT_REQUESTED = "requested"
 EVENT_STRUCTURED = "structured"
 EVENT_RENDERED = "rendered"
 EVENT_FAILED = "failed"
-
-MSG_ID_HEADER = "Nats-Msg-Id"
 
 _BIND_RETRY_DELAY_S = 2.0
 _BIND_MAX_ATTEMPTS = 90
@@ -47,15 +45,16 @@ def job_id_from_subject(subject: str) -> str:
 
 
 async def connect(url: str, name: str) -> Client:
-    return await nats.connect(url, name=name)
+    return await natsio.connect(url, name=name)
 
 
-async def bind_pull_consumer(js: JetStreamContext, durable: str) -> JetStreamContext.PullSubscription:
+async def bind_pull_consumer(js: JetStreamContext, durable: str) -> Consumer:
     """Bind to an existing durable pull consumer, waiting for the gateway to provision it."""
     for _ in range(_BIND_MAX_ATTEMPTS):
         try:
-            return await js.pull_subscribe_bind(consumer=durable, stream=STREAM)
-        except NotFoundError:
+            stream = await js.stream(STREAM)
+            return await stream.consumer(durable)
+        except (StreamNotFoundError, ConsumerNotFoundError):
             log.warning("consumer not provisioned yet, retrying", stream=STREAM, durable=durable)
             await asyncio.sleep(_BIND_RETRY_DELAY_S)
     raise RuntimeError(f"durable consumer {durable!r} on stream {STREAM!r} was never provisioned")
@@ -88,7 +87,7 @@ async def publish_event(
     event: str,
     payload: bytes,
 ) -> None:
-    """Publish a job event with trace propagation and idempotent Nats-Msg-Id."""
+    """Publish a job event with trace propagation and an idempotent per-event msg id."""
     subject = event_subject(job_id, event)
     tracer = trace.get_tracer("cv_shared.natsx")
     with tracer.start_as_current_span(
@@ -102,5 +101,4 @@ async def publish_event(
     ):
         # Inject inside the span so the consumer's extracted parent is this producer span.
         headers = inject_trace_headers()
-        headers[MSG_ID_HEADER] = f"{job_id}:{event}"
-        await js.publish(subject, payload, headers=headers)
+        await js.publish(subject, payload, msg_id=f"{job_id}:{event}", headers=headers or None)
