@@ -15,6 +15,10 @@ models:
     provider: ANTHROPIC
     model_id: claude-opus-4-8
     display_name: Claude Opus 4.8
+  - key: anthropic/claude-sonnet-5
+    provider: ANTHROPIC
+    model_id: claude-sonnet-5
+    display_name: Claude Sonnet 5
   - key: anthropic/claude-sonnet-4-5
     provider: ANTHROPIC
     model_id: claude-sonnet-4-5
