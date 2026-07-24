@@ -14,3 +14,7 @@ spec:
   podMetricsEndpoints:
     - port: http
       path: /metrics
+      # Keep flagger's own namespace/name labels (the canary's identity);
+      # without this vmagent renames them to exported_* and the
+      # CanaryRollback rule's {namespace="cvgen"} matches nothing.
+      honorLabels: true

@@ -16,6 +16,10 @@ spec:
     metadata:
       labels:
         app: gateway
+      # Bump the nonce to force a canary run without a functional change
+      # (e.g. to clear a stale Failed status).
+      annotations:
+        cvgen.dev/rollout-nonce: "1"
     spec:
       containers:
         - name: gateway
