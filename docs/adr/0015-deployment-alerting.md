@@ -27,8 +27,9 @@ One receiver, two feeders, failures only:
   appears in either git repo. The always-firing `Watchdog` heartbeat and
   `severity: info` alerts route to a blackhole receiver.
 - **Flagger rollbacks** ride the metrics path, per Flagger's own
-  documentation for unsupported channels: the flagger chart's `podMonitor`
-  is enabled (the VM operator converts it for vmagent), and a `VMRule` in
+  documentation for unsupported channels: a native `VMPodScrape` points
+  vmagent at flagger's `/metrics` (the chart's own `podMonitor` renders a
+  prometheus-operator CRD the cluster doesn't have), and a `VMRule` in
   the `cvgen` namespace fires `CanaryRollback` (critical) on
   `flagger_canary_status > 1` held for 1m. The status stays failed until a
   new revision rolls out, so the alert re-fires every 12h while production

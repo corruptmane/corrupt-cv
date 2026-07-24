@@ -28,7 +28,7 @@ repo under `apps/cvgen/`.
    `/homelab/telegram-chat-id` in SSM *before* merging the fleet-side
    alerting PR — the ESO-templated Alertmanager config depends on them.
    The `CanaryRollback` rule (`deploy/k8s/canary/vmrule.yaml`) and the
-   flagger `podMonitor` live in this repo; Alertmanager and the Flux
+   flagger `VMPodScrape` live in this repo; Alertmanager and the Flux
    failure `Alert` live in the fleet repo.
 
 ## Verified cluster facts (2026-07-23)

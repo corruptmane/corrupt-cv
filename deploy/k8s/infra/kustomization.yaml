@@ -5,6 +5,7 @@ resources:
   - namespaces.yaml
   - helmrepos.yaml
   - flagger.yaml
+  - flagger-scrape.yaml
   - flagger-loadtester.yaml
   - nats.yaml
   - valkey.yaml

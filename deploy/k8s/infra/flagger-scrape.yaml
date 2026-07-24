@@ -1,0 +1,16 @@
+---
+# vmagent scrape for flagger's /metrics; flagger_canary_status feeds the
+# CanaryRollback alert (canary/vmrule.yaml). Native VM CRD instead of the
+# chart's podMonitor, which needs prometheus-operator CRDs.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: flagger
+  namespace: flagger-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flagger
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
