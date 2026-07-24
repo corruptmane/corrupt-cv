@@ -24,6 +24,12 @@ repo under `apps/cvgen/`.
    metrics and logs pipelines and enables Prometheus naming on vmsingle
    (`-opentelemetry.usePrometheusNaming`) — required by the canary
    MetricTemplates and the metric names in ADR 0010.
+5. **Alerting** (ADR 0015): create `/homelab/telegram-bot-token` and
+   `/homelab/telegram-chat-id` in SSM *before* merging the fleet-side
+   alerting PR — the ESO-templated Alertmanager config depends on them.
+   The `CanaryRollback` rule (`deploy/k8s/canary/vmrule.yaml`) and the
+   flagger `podMonitor` live in this repo; Alertmanager and the Flux
+   failure `Alert` live in the fleet repo.
 
 ## Verified cluster facts (2026-07-23)
 

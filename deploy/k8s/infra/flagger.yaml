@@ -28,3 +28,7 @@ spec:
     metricsServer: "http://vmsingle-victoria-metrics-victoria-metrics-k8s-stack.monitoring.svc:8428"
     prometheus:
       install: false
+    # Scraped by vmagent (the VM operator converts PodMonitor);
+    # flagger_canary_status feeds the CanaryRollback alert (canary/vmrule.yaml).
+    podMonitor:
+      enabled: true

@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - metric-templates.yaml
   - canary.yaml
+  - vmrule.yaml

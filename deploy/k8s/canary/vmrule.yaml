@@ -1,0 +1,27 @@
+---
+# Flagger's AlertProvider has no Telegram type, so rollback alerting rides
+# the metrics path instead: flagger podMonitor -> vmagent -> this rule ->
+# vmalert -> Alertmanager -> Telegram. flagger_canary_status: 0 initialized,
+# 1 progressing, >1 failed (per the flagger alerting docs); the status stays
+# failed until a new revision rolls out, so the alert keeps firing (12h
+# repeat) while production sits on a rolled-back release.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: cvgen-canary
+  namespace: cvgen
+spec:
+  groups:
+    - name: cvgen-canary
+      rules:
+        - alert: CanaryRollback
+          expr: flagger_canary_status{namespace="cvgen"} > 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Canary rollback: {{ $labels.name }}"
+            description: >-
+              Flagger rolled back {{ $labels.name }} in namespace
+              {{ $labels.namespace }}; the primary keeps the last good
+              revision. Fix or revert the release to clear this alert.

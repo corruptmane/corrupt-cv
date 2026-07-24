@@ -80,12 +80,14 @@ The app runs at `cv.corruptmane.xyz` on a Talos/Cilium cluster, deployed
 entirely by GitOps: a push to main builds images (CI), Flux image
 automation bumps the manifests, and Flagger canaries the gateway through
 Cilium Gateway API — traffic shifts 10% at a time, gated on live
-success-rate and p99 from VictoriaMetrics, with automatic rollback. See
+success-rate and p99 from VictoriaMetrics, with automatic rollback —
+rollbacks and Flux reconciliation failures alert to Telegram via
+Alertmanager ([ADR 0015](docs/adr/0015-deployment-alerting.md)). See
 [ADR 0012](docs/adr/0012-k8s-flux-flagger-topology.md),
 [ADR 0013](docs/adr/0013-opentofu-s3-ssm-eso.md), and
 [docs/k8s/homelab-integration.md](docs/k8s/homelab-integration.md).
 
 ## Design docs
 
-- [ADRs](docs/adr/) — fourteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, the Kubernetes/GitOps/canary platform, and the natsio client.
+- [ADRs](docs/adr/) — fifteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, the Kubernetes/GitOps/canary platform, the natsio client, and deployment alerting.
 - [Roadmap](docs/roadmap.md) — delivered: k8s + Flux/Flagger + OpenTofu S3; next: multi-replica SSE fan-out, billing, protovalidate.

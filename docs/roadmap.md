@@ -7,6 +7,7 @@ v1 is deliberately compose-only (see [ADR 0011](adr/0011-anonymous-sessions-byo-
 - ~~**Kubernetes manifests**~~ — **delivered** ([ADR 0012](adr/0012-k8s-flux-flagger-topology.md)): `deploy/k8s/` Kustomizations reconciled by the homelab fleet repo; compose stays the dev loop.
 - ~~**Flux GitOps + Flagger canary**~~ — **delivered** ([ADR 0012](adr/0012-k8s-flux-flagger-topology.md)): Flagger `gatewayapi:v1` canaries on Cilium Gateway API, gated on VictoriaMetrics success-rate/p99, images rolled by Flux image automation.
 - ~~**OpenTofu object storage**~~ — **delivered** ([ADR 0013](adr/0013-opentofu-s3-ssm-eso.md)) as AWS S3 + SSM/ESO secret chain; the original Hetzner-k3s idea was superseded by hosting on the existing homelab Talos cluster, leaving S3 as the only external infrastructure.
+- ~~**Deployment alerting**~~ — **delivered** ([ADR 0015](adr/0015-deployment-alerting.md)): canary rollbacks (`flagger_canary_status` VMRule) and Flux reconciliation failures notify Telegram through a single ESO-configured Alertmanager; failures only.
 
 ## Product & scale
 
