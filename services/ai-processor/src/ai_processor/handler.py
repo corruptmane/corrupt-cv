@@ -109,8 +109,8 @@ class JobHandler:
                     career_text=request.career_text,
                     job_description=request.job_description,
                 )
-            except UnexpectedModelBehavior:
-                log.warning("model returned unusable output", job_id=job_id)
+            except UnexpectedModelBehavior as exc:
+                log.warning("model returned unusable output", job_id=job_id, error=str(exc))
                 await self._fail(job_id, BAD_OUTPUT_ERROR)
             except Exception as exc:
                 if not _is_transient(exc):
