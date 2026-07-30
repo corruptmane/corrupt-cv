@@ -36,13 +36,12 @@ async def generate_cv(
         career_text,
         job_description,
     )
-    with tracer.start_as_current_span("llm.generate"):
-        with capture_run_messages() as messages:
-            try:
-                result = await cv_agent.run(prompt, model=model)
-            except UnexpectedModelBehavior:
-                _log_messages(messages)
-                raise
+    with tracer.start_as_current_span("llm.generate"), capture_run_messages() as messages:
+        try:
+            result = await cv_agent.run(prompt, model=model)
+        except UnexpectedModelBehavior:
+            _log_messages(messages)
+            raise
     cv = result.output
     cv.personal_info = info
     return cv
