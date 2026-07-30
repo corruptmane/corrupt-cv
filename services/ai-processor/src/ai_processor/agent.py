@@ -7,7 +7,7 @@ from cv_shared.models import CV
 from cv_shared.proto_convert import personal_info_from_proto
 from cvgen.cv.v1 import cv_pb2
 from opentelemetry import trace
-from pydantic_ai import Agent, capture_run_messages
+from pydantic_ai import Agent, ModelSettings, capture_run_messages
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models import Model
 
@@ -38,7 +38,7 @@ async def generate_cv(
     )
     with tracer.start_as_current_span("llm.generate"), capture_run_messages() as messages:
         try:
-            result = await cv_agent.run(prompt, model=model)
+            result = await cv_agent.run(prompt, model=model, model_settings=ModelSettings(max_tokens=8192))
         except UnexpectedModelBehavior:
             _log_messages(messages)
             raise
