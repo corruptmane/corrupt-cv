@@ -38,7 +38,7 @@ async def generate_cv(
     )
     with tracer.start_as_current_span("llm.generate"), capture_run_messages() as messages:
         try:
-            result = await cv_agent.run(prompt, model=model, model_settings=ModelSettings(max_tokens=8192))
+            result = await cv_agent.run(prompt, model=model, model_settings=ModelSettings(max_tokens=16384))
         except UnexpectedModelBehavior:
             _log_messages(messages)
             raise
@@ -55,14 +55,16 @@ def _log_messages(messages: list) -> None:
         for part in getattr(msg, "parts", []):
             part_kind = type(part).__name__
             content = ""
-            if hasattr(part, "content") and isinstance(part.content, str):
-                snippet = part.content[:500]
-                content = snippet
+            if hasattr(part, "content"):
+                if isinstance(part.content, str):
+                    content = part.content[:2000]
+                elif isinstance(part.content, list):
+                    content = json.dumps(part.content, default=str)[:2000]
             elif hasattr(part, "args"):
                 try:
-                    content = json.dumps(part.args)[:500]
+                    content = json.dumps(part.args)[:2000]
                 except (TypeError, ValueError):
-                    content = str(part.args)[:500]
+                    content = str(part.args)[:2000]
             elif hasattr(part, "tool_name"):
                 content = f"tool={part.tool_name}"
             parts.append(f"{kind}.{part_kind}: {content}")
