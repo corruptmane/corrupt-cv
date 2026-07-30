@@ -9,7 +9,7 @@ from pydantic_ai.models import Model
 
 from ai_processor.prompts import SYSTEM_PROMPT, user_prompt
 
-cv_agent = Agent[None, CV](output_type=CV, instructions=SYSTEM_PROMPT)
+cv_agent = Agent[None, CV](output_type=CV, instructions=SYSTEM_PROMPT, retries=3)
 tracer = trace.get_tracer("ai_processor.agent")
 
 
