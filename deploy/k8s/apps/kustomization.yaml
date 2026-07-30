@@ -9,7 +9,7 @@ resources:
   - cv-generator.yaml
 images:
   - name: ghcr.io/corruptmane/cvgen-gateway
-    newTag: main-37-f659644 # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
+    newTag: main-42-94700a1 # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
   - name: ghcr.io/corruptmane/cvgen-ai-processor
     newTag: main-37-f659644 # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
   - name: ghcr.io/corruptmane/cvgen-cv-generator
