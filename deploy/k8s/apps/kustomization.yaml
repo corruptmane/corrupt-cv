@@ -13,4 +13,4 @@ images:
   - name: ghcr.io/corruptmane/cvgen-ai-processor
     newTag: main-22-b29ee26 # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
   - name: ghcr.io/corruptmane/cvgen-cv-generator
-    newTag: main-22-b29ee26 # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}
+    newTag: main-27-9a5814f # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}
