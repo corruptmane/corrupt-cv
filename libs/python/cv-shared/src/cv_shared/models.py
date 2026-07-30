@@ -77,7 +77,7 @@ class LanguageProficiency(StrEnum):
 
 
 class Language(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, strict=True)
+    model_config = ConfigDict(populate_by_name=True)
 
     name: str
     proficiency: LanguageProficiency
