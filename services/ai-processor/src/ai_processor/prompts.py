@@ -136,7 +136,7 @@ languages
 - A role the candidate still holds: leave end_date unset. Never write "Present", "Current",
   "now", or today's date — the renderer supplies that.
 - A section with no source data: return an empty list. Never emit a placeholder entry, "N/A",
-  or "-".
+  or "-".\
 """
 
 
