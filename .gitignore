@@ -21,3 +21,4 @@ services/gateway/bin/
 .DS_Store
 .idea/
 .vscode/
+.omo/
