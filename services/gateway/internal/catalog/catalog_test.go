@@ -1,8 +1,10 @@
 package catalog
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	catalogv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/catalog/v1"
@@ -119,6 +121,80 @@ func TestSearchMatchesDisplayName(t *testing.T) {
 	got := keys(c.Search("canned cv"))
 	if len(got) != 1 || got[0] != "fake/canned-cv" {
 		t.Fatalf("Search(canned cv) = %v, want [fake/canned-cv]", got)
+	}
+}
+
+func loadInlineYAML(t *testing.T, yamlBody string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "catalog.yaml")
+	if err := os.WriteFile(path, []byte(yamlBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadProviderMapping(t *testing.T) {
+	cases := []struct {
+		provider string
+		wantOK   bool
+	}{
+		{"FAKE", true},
+		{"ANTHROPIC", true},
+		{"OPENROUTER", true},
+		{"WIDGET", false},
+	}
+	for _, tc := range cases {
+		yamlBody := fmt.Sprintf(`models:
+  - key: test/model
+    provider: %s
+    model_id: model
+    display_name: Test Model
+`, tc.provider)
+		c, err := Load(loadInlineYAML(t, yamlBody))
+		if tc.wantOK {
+			if err != nil {
+				t.Errorf("provider %s: Load: %v, want ok", tc.provider, err)
+				continue
+			}
+			entry := c.Get("test/model")
+			if entry == nil {
+				t.Errorf("provider %s: Get(test/model) returned nil", tc.provider)
+				continue
+			}
+			if got := entry.GetProvider().String(); got != "PROVIDER_"+tc.provider {
+				t.Errorf("provider %s: entry provider = %q, want PROVIDER_%s", tc.provider, got, tc.provider)
+			}
+		} else {
+			if err == nil {
+				t.Errorf("provider %s: Load succeeded, want unknown-provider error", tc.provider)
+			}
+		}
+	}
+}
+
+func TestLoadRealCatalogFile(t *testing.T) {
+	c, err := Load(filepath.Join("..", "..", "..", "..", "configs", "model-catalog.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	entries := c.All()
+	if len(entries) < 13 {
+		t.Fatalf("got %d entries, want >= 13", len(entries))
+	}
+	glm := c.Get("openrouter/glm-5.3")
+	if glm == nil {
+		t.Fatal("Get(openrouter/glm-5.3) returned nil")
+	}
+	if glm.GetModelId() != "z-ai/glm-5.3" {
+		t.Errorf("model_id = %q, want z-ai/glm-5.3", glm.GetModelId())
+	}
+	for _, e := range entries {
+		if strings.Contains(e.GetKey(), ":") {
+			t.Errorf("key %q contains ':' (invalid in NATS KV keys)", e.GetKey())
+		}
+		if e.GetProvider() == catalogv1.Provider_PROVIDER_UNSPECIFIED {
+			t.Errorf("entry %q has unspecified provider", e.GetKey())
+		}
 	}
 }
 

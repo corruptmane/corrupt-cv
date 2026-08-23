@@ -10,9 +10,11 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from ai_processor.fake import build_fake_model
 
@@ -33,5 +35,7 @@ def build_model(entry: catalog_pb2.ModelCatalogEntry, api_key: str | None) -> Mo
             return OpenAIChatModel(entry.model_id, provider=OpenAIProvider(api_key=api_key))
         case catalog_pb2.PROVIDER_GOOGLE:
             return GoogleModel(entry.model_id, provider=GoogleProvider(api_key=api_key))
+        case catalog_pb2.PROVIDER_OPENROUTER:
+            return OpenRouterModel(entry.model_id, provider=OpenRouterProvider(api_key=api_key))
         case _:
             raise UnsupportedProviderError(f"unsupported provider {entry.provider} for key {entry.key!r}")

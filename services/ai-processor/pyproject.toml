@@ -5,7 +5,7 @@ description = "Turns career text + job description into a structured, tailored C
 requires-python = ">=3.13"
 dependencies = [
     "cv-shared",
-    "pydantic-ai-slim[anthropic,openai,google]>=2.5",
+    "pydantic-ai-slim[anthropic,openai,google,openrouter]>=2.5",
     "valkey>=6.0",
     "opentelemetry-instrumentation-httpx>=0.57b0",
 ]

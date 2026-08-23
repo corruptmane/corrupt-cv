@@ -10,6 +10,7 @@ enum Provider {
   // Test provider that returns a canned CV without calling any LLM;
   // requires no API key.
   PROVIDER_FAKE = 4;
+  PROVIDER_OPENROUTER = 5;
 }
 
 // One selectable model in the dynconfig catalog (NATS KV bucket

@@ -12,11 +12,13 @@ class Provider(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PROVIDER_OPENAI: _ClassVar[Provider]
     PROVIDER_GOOGLE: _ClassVar[Provider]
     PROVIDER_FAKE: _ClassVar[Provider]
+    PROVIDER_OPENROUTER: _ClassVar[Provider]
 PROVIDER_UNSPECIFIED: Provider
 PROVIDER_ANTHROPIC: Provider
 PROVIDER_OPENAI: Provider
 PROVIDER_GOOGLE: Provider
 PROVIDER_FAKE: Provider
+PROVIDER_OPENROUTER: Provider
 
 class ModelCatalogEntry(_message.Message):
     __slots__ = ("key", "provider", "model_id", "display_name", "description")
