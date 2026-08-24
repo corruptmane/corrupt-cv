@@ -53,30 +53,27 @@ type Object struct {
 	ContentLength *int64
 }
 
-// probeKey is HeadObject'd by the readiness probe. The key intentionally
-// does not exist: a NoSuchKey 404 is the healthy signal (network up,
-// authn OK, object-action authorized), because the cvgen IAM user
-// deliberately has no bucket-level permissions — infra/opentofu/iam.tf
-// grants only GetObject/PutObject on cvs/*, so HeadBucket would 403
-// forever.
+// probeKey is fetched by the readiness probe. It intentionally does not
+// exist, and the fetch deliberately uses GET rather than HEAD: without
+// s3:ListBucket (infra/opentofu/iam.tf grants only GetObject/PutObject on
+// cvs/*), S3 answers HEAD-on-missing-key with a 403 that hides the 404 —
+// so a HEAD probe would read as Forbidden forever.
 const probeKey = "cvs/.readyz-probe"
 
 // HeadBucket verifies that object storage is reachable AND that the app
 // credentials are authorized against it. It is the readiness probe for
 // object storage.
 func (c *Client) HeadBucket(ctx context.Context) error {
-	_, err := c.s3.HeadObject(ctx, &awss3.HeadObjectInput{
-		Bucket: aws.String(c.bucket),
-		Key:    aws.String(probeKey),
-	})
-	if err != nil {
-		var noKey *types.NotFound
-		if errors.As(err, &noKey) {
-			return nil
-		}
-		return fmt.Errorf("probe object storage (head %s): %w", probeKey, err)
+	_, err := c.Get(ctx, probeKey)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrNotFound):
+		// Authorized 404: network up, authn OK, object-action allowed.
+		return nil
+	default:
+		return fmt.Errorf("probe object storage: %w", err)
 	}
-	return nil
 }
 
 // Get streams an object from the bucket. Returns ErrNotFound when the
