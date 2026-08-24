@@ -4,7 +4,9 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -52,6 +54,9 @@ func Load(path string) (*Catalog, error) {
 		if m.Key == "" || m.ModelID == "" || m.DisplayName == "" {
 			return nil, fmt.Errorf("catalog entry %d: key, model_id and display_name are required", i)
 		}
+		if r, pos, bad := firstInvalidKeyRune(m.Key); bad {
+			return nil, fmt.Errorf("model %q: invalid character %q at position %d", m.Key, string(r), pos)
+		}
 		providerName := "PROVIDER_" + strings.ToUpper(m.Provider)
 		providerNum, ok := catalogv1.Provider_value[providerName]
 		if !ok || providerNum == int32(catalogv1.Provider_PROVIDER_UNSPECIFIED) {
@@ -73,8 +78,30 @@ func Load(path string) (*Catalog, error) {
 	return c, nil
 }
 
+// firstInvalidKeyRune returns the first rune of key outside the NATS KV
+// key charset [-/_=.a-zA-Z0-9] documented in
+// proto/cvgen/catalog/v1/catalog.proto, together with its 1-based rune
+// position. ok is false when key is fully within the charset.
+func firstInvalidKeyRune(key string) (r rune, pos int, ok bool) {
+	i := 0
+	for _, r := range key {
+		i++
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '-', r == '/', r == '_', r == '=', r == '.':
+		default:
+			return r, i, true
+		}
+	}
+	return 0, 0, false
+}
+
 // Seed upserts every catalog entry into the KV bucket as binary
-// protobuf, keyed by catalog key.
+// protobuf, keyed by catalog key. It then reconciles the bucket: keys
+// left over from a previous catalog revision (models since removed from
+// the YAML) are deleted so ghosts cannot stay selectable.
 func (c *Catalog) Seed(ctx context.Context, kv natsjs.KeyValue) error {
 	for _, entry := range c.entries {
 		data, err := proto.Marshal(entry)
@@ -84,6 +111,27 @@ func (c *Catalog) Seed(ctx context.Context, kv natsjs.KeyValue) error {
 		if _, err := kv.Put(ctx, entry.GetKey(), data); err != nil {
 			return fmt.Errorf("seed catalog entry %q: %w", entry.GetKey(), err)
 		}
+	}
+
+	current, err := kv.Keys(ctx)
+	if err != nil && !errors.Is(err, natsjs.ErrNoKeysFound) {
+		return fmt.Errorf("list catalog bucket keys: %w", err)
+	}
+	wanted := make(map[string]struct{}, len(c.entries))
+	for _, entry := range c.entries {
+		wanted[entry.GetKey()] = struct{}{}
+	}
+	for _, key := range current {
+		if _, ok := wanted[key]; ok {
+			continue
+		}
+		if err := kv.Delete(ctx, key); err != nil {
+			return fmt.Errorf("evict stale catalog entry %q: %w", key, err)
+		}
+		slog.Info("evicted stale model catalog entry",
+			"key", key,
+			"kv_bucket", kv.Bucket(),
+		)
 	}
 	return nil
 }
