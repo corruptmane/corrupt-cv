@@ -3,6 +3,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -53,24 +54,38 @@ type Object struct {
 	ContentLength *int64
 }
 
-// probeKey is written and deleted by the readiness probe. Read-probes of
-// a nonexistent key cannot work under the cvgen IAM policy
-// (infra/opentofu/iam.tf grants GetObject/PutObject/DeleteObject on cvs/*
-// but no s3:ListBucket): S3 answers reads of missing keys with
-// AccessDenied naming s3:ListBucket rather than revealing non-existence.
-// A write+delete round-trip therefore proves reachability, authn and
-// authz using only granted actions.
+// probeKey is written and read back by the readiness probe. Read-probes
+// of a nonexistent key cannot work under the cvgen IAM policy
+// (infra/opentofu/iam.tf grants GetObject/PutObject on cvs/* but no
+// s3:ListBucket): S3 answers reads of missing keys with AccessDenied
+// naming s3:ListBucket rather than revealing non-existence. A write +
+// read-back round-trip therefore proves reachability, authn and authz
+// using only granted actions, leaving one fixed ~2-byte marker object.
 const probeKey = "cvs/.readyz-probe"
 
 // HeadBucket verifies that object storage is reachable AND that the app
 // credentials are authorized against it. It is the readiness probe for
 // object storage.
 func (c *Client) HeadBucket(ctx context.Context) error {
-	if _, err := c.Put(ctx, probeKey, []byte("ok")); err != nil {
+	if err := c.Put(ctx, probeKey, []byte("ok")); err != nil {
 		return fmt.Errorf("probe object storage (put %s): %w", probeKey, err)
 	}
-	if err := c.Delete(ctx, probeKey); err != nil {
-		return fmt.Errorf("probe object storage (delete %s): %w", probeKey, err)
+	obj, err := c.Get(ctx, probeKey)
+	if err != nil {
+		return fmt.Errorf("probe object storage (get %s): %w", probeKey, err)
+	}
+	return obj.Body.Close()
+}
+
+// Put stores data at key, overwriting any existing object.
+func (c *Client) Put(ctx context.Context, key string, data []byte) error {
+	_, err := c.s3.PutObject(ctx, &awss3.PutObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+		Body:   bytes.NewReader(data),
+	})
+	if err != nil {
+		return fmt.Errorf("put s3 object %s: %w", key, err)
 	}
 	return nil
 }
