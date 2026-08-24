@@ -63,3 +63,20 @@ run-ai:
 
 run-render:
     uv run --package cv-generator cv-generator
+
+# Hubble access (Cilium). Each surface needs exactly one forward:
+#   just hubble-relay-fwd  -> gRPC for the CLI (:4245)
+#   just hubble-ui-fwd     -> full UI incl. GraphQL proxy (http://127.0.0.1:12000)
+hubble-relay-fwd:
+    kubectl -n kube-system port-forward svc/hubble-relay 4245:80
+
+hubble-ui-fwd:
+    kubectl -n kube-system port-forward svc/hubble-ui 12000:80
+
+# Observe flows. The CLI must match the cluster's Cilium minor (1.18.x):
+# newer CLIs request proto fieldmasks the relay rejects ("invalid fieldmask").
+# Needs `just hubble-relay-fwd` running in another shell.
+hubble-drops *args:
+    #!/usr/bin/env sh
+    if command -v hubble-1.18 >/dev/null 2>&1; then BIN=hubble-1.18; else BIN=hubble; fi
+    exec "$BIN" observe --server 127.0.0.1:4245 --namespace cvgen --verdict DROPPED "{{args}}"
