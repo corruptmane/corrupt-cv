@@ -1,6 +1,7 @@
 """Message handler: JobStructured -> Typst PDF -> S3 -> JobRendered | JobFailed."""
 
 import asyncio
+from io import BytesIO
 from typing import NoReturn, Protocol
 
 import structlog
@@ -15,11 +16,14 @@ from natsio.jetstream import JsMsg
 from natsio.jetstream.context import JetStreamContext
 from opentelemetry import trace
 from pydantic import ValidationError
+from pypdf import PdfReader
 
 from cv_generator.storage import object_key
 
 RENDER_ERROR = "The CV could not be rendered to PDF; please resubmit"
 INVALID_INPUT_ERROR = "The submitted data could not be processed; please resubmit"
+PAGE_LIMIT_ERROR = "The generated CV exceeded 2 pages; please shorten your career history and resubmit"
+PAGE_LIMIT = 2
 
 log = structlog.get_logger("cv_generator.handler")
 tracer = trace.get_tracer("cv_generator.handler")
@@ -74,6 +78,14 @@ class JobHandler:
         except typst.TypstError as exc:
             log.warning("typst rendering failed", job_id=job_id, error=str(exc))
             await self._fail(job_id, RENDER_ERROR)
+
+        # W9: the page limit is a property of what rendering produced, so it is
+        # checked on the rendered bytes — after the render span, before storage,
+        # so a doomed PDF is never uploaded. Stage stays RENDERING.
+        page_count = len(PdfReader(BytesIO(pdf)).pages)
+        if page_count > PAGE_LIMIT:
+            log.warning("rendered CV exceeds page limit", job_id=job_id, pages=page_count)
+            await self._fail(job_id, PAGE_LIMIT_ERROR)
 
         # Storage errors propagate: nak + redelivery, the overwrite is idempotent. The result
         # publish retries transient transport blips in-delivery first, then propagates likewise.

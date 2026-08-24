@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "cv-shared",
     "typst>=0.15",
+    "pypdf>=5",
     "opendal>=0.45",
 ]
 

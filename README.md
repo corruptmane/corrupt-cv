@@ -1,6 +1,6 @@
 # cvgen — AI-tailored CV generator
 
-Paste your career history once; for every job posting, get a one-page PDF CV tailored by the LLM of your choice (bring your own API key — or use the built-in fake model with no key at all).
+Paste your career history once; for every job posting, get a tight, at-most-two-page PDF CV tailored by the LLM of your choice (bring your own API key — or use the built-in fake model with no key at all).
 
 This is a portfolio project of a backend engineer moving into platform engineering. The product is intentionally small; the point is the system around it: event-driven services on NATS JetStream, contract-first protobuf APIs, exactly-once secret handoff, reproducible builds, CI with drift checks, and an observability stack — all runnable with one command.
 

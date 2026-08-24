@@ -134,6 +134,8 @@ languages
 
 # Output contract
 
+- Length: aim for a one-page CV and never exceed two pages; when space runs short, compress
+  depth rather than dropping facts or roles.
 - Dates: keep the granularity the notes give and use one consistent format across all entries,
   preferring "YYYY-MM", or "YYYY" when only years are known. Never invent a month.
 - A role the candidate still holds: leave end_date unset. Never write "Present", "Current",

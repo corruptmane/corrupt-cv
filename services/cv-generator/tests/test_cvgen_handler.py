@@ -1,21 +1,43 @@
 """Handler unit tests with fake js/renderer/storage objects (no network)."""
 
 import asyncio
+import tempfile
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cache
+from io import BytesIO
+from pathlib import Path
 from typing import cast
 
 import pytest
 import typst
-from cv_generator.handler import INVALID_INPUT_ERROR, RENDER_ERROR, JobHandler
+from cv_generator.handler import INVALID_INPUT_ERROR, PAGE_LIMIT_ERROR, RENDER_ERROR, JobHandler
 from cv_shared.consumer import TerminalError
 from cvgen.cv.v1 import cv_pb2
 from cvgen.events.v1 import events_pb2
 from natsio.jetstream import JsMsg
 from natsio.jetstream.context import JetStreamContext
+from pypdf import PdfReader
 
 JOB_ID = "7a1e5d70-9c2b-4f4e-8a3d-2b1c0d9e8f7a"
+
+
+@cache
+def _typst_pdf(pages: int) -> bytes:
+    """Compile a tiny N-page Typst doc into a REAL PDF so page-limit tests parse genuine output."""
+    source = "\n\n#pagebreak()\n\n".join(f"Page {n}" for n in range(1, pages + 1))
+    with tempfile.NamedTemporaryFile("w", suffix=".typ", delete=False) as file:
+        file.write(source)
+        path = file.name
+    pdf = typst.compile(path)
+    Path(path).unlink()
+    assert isinstance(pdf, bytes) and pdf.startswith(b"%PDF")
+    assert len(PdfReader(BytesIO(pdf)).pages) == pages
+    return pdf
+
+
+_SINGLE_PAGE_PDF = _typst_pdf(1)
 
 
 @dataclass
@@ -46,8 +68,9 @@ class FakeJetStream:
 
 
 class FakeRenderer:
-    def __init__(self, *, error: Exception | None = None) -> None:
+    def __init__(self, *, error: Exception | None = None, pdf: bytes | None = None) -> None:
         self.error = error
+        self.pdf = pdf
         self.rendered: list[str] = []
         self.render_threads: list[int] = []
 
@@ -56,7 +79,7 @@ class FakeRenderer:
         if self.error is not None:
             raise self.error
         self.rendered.append(cv_json)
-        return b"%PDF-fake" + b"x" * 64
+        return _SINGLE_PAGE_PDF if self.pdf is None else self.pdf
 
 
 class FakeStorage:
@@ -125,7 +148,7 @@ async def test_success_uploads_pdf_and_publishes_job_rendered() -> None:
 
     # end_date=None must reach the template as "Present", never null.
     assert '"Present"' in renderer.rendered[0]
-    assert storage.written == [(f"cvs/{JOB_ID}.pdf", b"%PDF-fake" + b"x" * 64)]
+    assert storage.written == [(f"cvs/{JOB_ID}.pdf", _SINGLE_PAGE_PDF)]
 
     assert len(js.published) == 1
     subject, payload, _headers, msg_id = js.published[0]
@@ -167,6 +190,36 @@ async def test_typst_error_is_terminal_and_publishes_job_failed() -> None:
     failed.ParseFromString(payload)
     assert failed.stage == events_pb2.JOB_STAGE_RENDERING
     assert failed.error == RENDER_ERROR
+
+
+async def test_oversized_render_fails_with_page_limit() -> None:
+    # W9: a rendered CV over two pages is terminal — and must never reach storage.
+    js = FakeJetStream()
+    renderer = FakeRenderer(pdf=_typst_pdf(3))
+    storage = FakeStorage()
+
+    with pytest.raises(TerminalError):
+        await _handler(js, renderer, storage)(_structured_msg())
+
+    assert storage.written == []  # doomed PDF never uploaded
+    failed = _published_failure(js)
+    assert failed.stage == events_pb2.JOB_STAGE_RENDERING
+    assert failed.error == PAGE_LIMIT_ERROR
+
+
+async def test_two_page_render_passes() -> None:
+    js = FakeJetStream()
+    renderer = FakeRenderer(pdf=_typst_pdf(2))
+    storage = FakeStorage()
+
+    await _handler(js, renderer, storage)(_structured_msg())  # exactly at the limit: fine
+
+    assert len(storage.written) == 1
+    assert storage.written[0][0] == f"cvs/{JOB_ID}.pdf"
+    assert len(js.published) == 1
+    subject, _payload, _headers, msg_id = js.published[0]
+    assert subject == f"cv.{JOB_ID}.rendered"
+    assert msg_id == f"{JOB_ID}:rendered"
 
 
 async def test_storage_error_propagates_for_redelivery() -> None:
