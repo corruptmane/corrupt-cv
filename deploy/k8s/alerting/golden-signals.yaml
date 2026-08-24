@@ -86,11 +86,12 @@ spec:
               far past the 500ms the canary gate enforces at deploy time.
               Expect slow page loads and delayed SSE event tails.
             runbook_url: https://github.com/corruptmane/corrupt-cv/blob/main/docs/k8s/alerting.md#gateway-p99-latency
-        # UNPROVEN LABEL SET: kube_job_status_failed is the one identifier
-        # here not verified against live series — it can only appear once
-        # workstream W12 lands the cvgen-synthetic CronJob and
-        # kube-state-metrics surfaces it. Re-verify the label set against
-        # live data post-W12 before trusting this rule. Scoping
+        # LABEL SET STILL TO BE VERIFIED AGAINST LIVE SERIES: this rule was
+        # authored ahead of the series it queries. The cvgen-synthetic
+        # CronJob now exists (deploy/k8s/apps/synthetic-cronjob.yaml);
+        # kube-state-metrics exports kube_job_status_failed for its Jobs
+        # once the first scheduled run lands — verify the label set against
+        # live data then before fully trusting this rule. Scoping
         # job_name=~"cvgen-synthetic.*" deliberately excludes cvgen-migrate:
         # migration failures gate the apps Kustomization (wait: true) and
         # surface as a Flux reconciliation alert instead (ADR 0015).

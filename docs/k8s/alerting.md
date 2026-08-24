@@ -18,8 +18,10 @@ Metric names below were verified against live VMSingle:
 `http_server_request_duration_seconds_count` / `_bucket` with
 `service_name="gateway"`, string-valued `http_response_status_code`
 ("200"/"500"), and `le` buckets in seconds. The single exception is
-`kube_job_status_failed`, which stays unproven until W12 lands the
-cvgen-synthetic CronJob and must be re-checked against live series then.
+`kube_job_status_failed`, whose label set was authored ahead of the
+series it queries: the `cvgen-synthetic` CronJob now exists
+(`deploy/k8s/apps/synthetic-cronjob.yaml`), so verify the labels
+against live series after its first scheduled run.
 
 ## Gateway 5xx error rate
 
@@ -90,8 +92,9 @@ anti-flap measure riding out a failed Job object being replaced by the next
 scheduled run; `increase()` over 2h already smooths single retries within
 `backoffLimit`.
 
-**Caveat** — the label set is unproven until W12 lands the CronJob;
-re-verify against live series post-W12.
+**Caveat** — the label set was authored ahead of the series it queries:
+the CronJob now exists (`deploy/k8s/apps/synthetic-cronjob.yaml`), so
+verify the labels against live series after its first scheduled run.
 
 **Expected noise** — retries inside `backoffLimit` counting as multiple
 failed runs per occurrence; missed schedules during node maintenance
