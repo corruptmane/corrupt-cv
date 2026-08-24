@@ -28,6 +28,8 @@ _NON_ATTRIBUTE_KEYS = frozenset({"event", "level", "timestamp", "trace_id", "spa
 # (provider, logger) cache so the bridge doesn't hit the provider lock per log call.
 _otel_logger_cache: tuple[object, Logger] | None = None
 
+_LEVELS = logging.getLevelNamesMapping()
+
 
 def _add_trace_ids(_logger: object, _method: str, event_dict: structlog.typing.EventDict) -> structlog.typing.EventDict:
     span = trace.get_current_span()
@@ -69,6 +71,11 @@ def _emit_otel_log(_logger: object, method: str, event_dict: structlog.typing.Ev
 
 
 def setup_logging(level: str = "INFO") -> None:
+    upper = level.upper()
+    if upper not in _LEVELS or upper == "NOTSET":
+        allowed = ", ".join(sorted(name for name in _LEVELS if name != "NOTSET"))
+        msg = f"invalid LOG_LEVEL {level!r}: expected one of {allowed}"
+        raise ValueError(msg)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -80,7 +87,7 @@ def setup_logging(level: str = "INFO") -> None:
             _emit_otel_log,
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelNamesMapping()[level.upper()]),
+        wrapper_class=structlog.make_filtering_bound_logger(_LEVELS[upper]),
         logger_factory=structlog.PrintLoggerFactory(sys.stderr),
         cache_logger_on_first_use=True,
     )

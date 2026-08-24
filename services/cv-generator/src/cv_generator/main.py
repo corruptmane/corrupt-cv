@@ -9,7 +9,7 @@ from cv_shared.consumer import run_pull_loop
 from cv_shared.health import HealthServer
 from cv_shared.logging import setup_logging
 from cv_shared.natsx import DURABLE_CV_GENERATOR, bind_pull_consumer, connect
-from cv_shared.otel import setup_otel
+from cv_shared.otel import setup_otel, shutdown
 
 from cv_generator.handler import JobHandler
 from cv_generator.renderer import Renderer
@@ -78,6 +78,12 @@ async def _run() -> None:
         log.info("shutting down")
         health.stop()
         await nc.drain()
+        # Flush OTel batch processors last so final spans/logs are exported;
+        # telemetry teardown must never mask the exit path above.
+        try:
+            shutdown()
+        except Exception:
+            log.exception("otel shutdown failed")
 
 
 def main() -> None:

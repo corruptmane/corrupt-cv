@@ -16,8 +16,8 @@ services:
     image: nats:2.14-alpine
     command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
     volumes:
       - nats-data:/data
     healthcheck:
@@ -34,7 +34,7 @@ services:
       POSTGRES_PASSWORD: cv
       POSTGRES_DB: cv
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -46,7 +46,7 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
@@ -56,11 +56,34 @@ services:
   # OpenStack Swift all-in-one with s3api already in the stock proxy pipeline
   # (verified: tempauth creds test:tester/testing, path-style requests).
   # The image is amd64-only; on Apple Silicon it runs under Rosetta emulation.
+  #
+  # Persistence (verified against the image, not assumed): object/account/container
+  # data lives under /srv/node/swift-d*/ (STORAGE_TYPE=internal_dirs default, plain
+  # dirs), so swift-data:/srv carries the data. BUT the image's s6 boot rebuilds
+  # its rings on EVERY start (cont-init.d/02_build_remakerings), and Swift rings
+  # are NOT deterministic across rebuilds (random per-device tiebreaker, per
+  # upstream ring-builder docs) — a rebuilt ring makes persisted data unreachable.
+  # The entrypoint therefore snapshots the rings into the volume on first boot and
+  # restores them + skips the rebuild on later boots. `just down` (-v) still wipes
+  # everything by design.
   swift:
     image: openstackswift/saio:latest
     platform: linux/amd64
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -f /srv/.rings/account.ring.gz ]; then
+          cp -p /srv/.rings/* /etc/swift/
+          rm -f /etc/cont-init.d/02_build_remakerings
+        else
+          ( while [ ! -f /etc/swift/account.ring.gz ]; do sleep 1; done
+            mkdir -p /srv/.rings && cp -p /etc/swift/*.builder /etc/swift/*.ring.gz /srv/.rings/ ) &
+        fi
+        exec /init
     ports:
-      - "8090:8080"
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - swift-data:/srv
     healthcheck:
       # curl is present in the image (verified); /healthcheck is Swift's
       # built-in proxy healthcheck middleware.
@@ -121,8 +144,8 @@ services:
       context: ../..
       dockerfile: services/gateway/Dockerfile
     ports:
-      - "8080:8080"
-      - "9090:9090"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9090:9090"
     environment:
       <<: *s3-env
       APP_ADDR: ":8080"
@@ -198,8 +221,8 @@ services:
     volumes:
       - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
     ports:
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
     depends_on:
       - victoriametrics
       - victorialogs
@@ -217,7 +240,7 @@ services:
     volumes:
       - vm-data:/storage
     ports:
-      - "8428:8428"
+      - "127.0.0.1:8428:8428"
 
   victorialogs:
     profiles: ["observability"]
@@ -228,7 +251,7 @@ services:
     volumes:
       - vl-data:/storage
     ports:
-      - "9428:9428"
+      - "127.0.0.1:9428:9428"
 
   victoriatraces:
     profiles: ["observability"]
@@ -239,7 +262,7 @@ services:
     volumes:
       - vt-data:/storage
     ports:
-      - "10428:10428"
+      - "127.0.0.1:10428:10428"
 
   grafana:
     profiles: ["observability"]
@@ -256,7 +279,7 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - victoriametrics
       - victorialogs
@@ -265,6 +288,7 @@ services:
 volumes:
   nats-data:
   postgres-data:
+  swift-data:
   vm-data:
   vl-data:
   vt-data:

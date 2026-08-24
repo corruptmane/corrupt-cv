@@ -9,7 +9,7 @@ from cv_shared.consumer import run_pull_loop
 from cv_shared.health import HealthServer
 from cv_shared.logging import setup_logging
 from cv_shared.natsx import DURABLE_AI_PROCESSOR, KV_MODEL_CATALOG, bind_kv, bind_pull_consumer, connect
-from cv_shared.otel import setup_otel
+from cv_shared.otel import setup_otel, shutdown
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from valkey.asyncio import Valkey
 
@@ -79,6 +79,12 @@ async def _run() -> None:
         health.stop()
         await valkey.aclose()
         await nc.drain()
+        # Flush OTel batch processors last so final spans/logs are exported;
+        # telemetry teardown must never mask the exit path above.
+        try:
+            shutdown()
+        except Exception:
+            log.exception("otel shutdown failed")
 
 
 def main() -> None:

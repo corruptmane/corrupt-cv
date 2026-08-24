@@ -1,8 +1,10 @@
 """Golden render tests: canned fixture CVs through the REAL template."""
 
+import json
 from pathlib import Path
 
 import pytest
+import typst
 from cv_generator.renderer import Renderer
 from cv_shared.models import (
     CV,
@@ -91,3 +93,19 @@ def test_open_ended_experience_renders_as_present(renderer: Renderer) -> None:
     pdf = renderer.render(cv_json)
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 10 * 1024
+
+
+def _query_edu_ranges(cv: CV) -> list[str]:
+    """Read back each education date range via the template's <cvgen-edu-range> metadata seam."""
+    compiler = typst.Compiler(TEMPLATE_PATH, sys_inputs={"data": cv_to_typst_json(cv)})
+    return json.loads(compiler.query("<cvgen-edu-range>", field="value", format="json"))
+
+
+def test_empty_education_end_date_prints_bare_start_year() -> None:
+    cv = fixture_cv(current_role=False)
+    cv.education[0].end_date = ""
+    assert _query_edu_ranges(cv) == ["2013"]
+
+
+def test_education_range_keeps_en_dash_when_end_date_present() -> None:
+    assert _query_edu_ranges(fixture_cv(current_role=False)) == ["2013 \u2013 2018"]

@@ -99,14 +99,18 @@
   heading(level: 1)[Education]
 
   for edu in data.education {
+    // Bare start year when end_date is empty (no dangling dash). The metadata
+    // seam lets tests query the rendered range without PDF text extraction.
+    let edu-range = if edu.end_date == "" { edu.start_date } else { edu.start_date + " – " + edu.end_date }
     grid(
       columns: (1fr, auto),
       align: (left, right),
       text(weight: "bold")[#edu.degree in #edu.field],
-      text(size: 9pt, fill: muted-color)[#edu.start_date #sym.dash.en #edu.end_date],
+      text(size: 9pt, fill: muted-color)[#edu-range],
     )
     v(-0.3em)
     text(size: 9.5pt)[#edu.institution]
+    [#metadata(edu-range) <cvgen-edu-range>]
 
     if edu.gpa != none {
       text(size: 9pt, fill: muted-color)[ — GPA: #str(edu.gpa)]

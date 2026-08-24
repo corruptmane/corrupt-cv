@@ -26,6 +26,7 @@ JOB_ID = "7a1e5d70-9c2b-4f4e-8a3d-2b1c0d9e8f7a"
 @pytest.fixture(autouse=True)
 def _fresh_otel_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(otel, "_configured", False)
+    monkeypatch.setattr(otel, "_tracer_provider", None)
     monkeypatch.setattr(otel, "_logger_provider", None)
     monkeypatch.setattr(cv_logging, "_otel_logger_cache", None)
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
@@ -81,6 +82,71 @@ def test_setup_otel_with_endpoint_configures_and_is_idempotent(monkeypatch: pyte
     assert set_log_providers[0].resource.attributes["service.name"] == "env-name"
     set_providers[0].shutdown()
     set_log_providers[0].shutdown()
+
+
+def test_setup_otel_failure_leaves_gate_open_for_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_configured flips only AFTER provider construction succeeds, so a failed setup can be retried."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+
+    def failing_set(_provider: TracerProvider) -> None:
+        msg = "collector unreachable"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(otel.trace, "set_tracer_provider", failing_set)
+    with pytest.raises(RuntimeError, match="collector unreachable"):
+        otel.setup_otel("svc")
+    assert otel._configured is False
+
+    monkeypatch.setattr(otel.trace, "set_tracer_provider", lambda _p: None)
+    set_log_providers: list[LoggerProvider] = []
+    monkeypatch.setattr(otel, "set_logger_provider", set_log_providers.append)
+    otel.setup_otel("svc")
+    assert otel._configured is True
+    assert otel.active_logger_provider() is set_log_providers[0]
+    set_log_providers[0].shutdown()
+
+
+# --- shutdown ---
+
+
+def test_shutdown_without_setup_is_safe() -> None:
+    otel.shutdown()
+    assert otel.active_logger_provider() is None
+
+
+def test_shutdown_shuts_down_both_providers_and_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+    set_providers: list[TracerProvider] = []
+    monkeypatch.setattr(otel.trace, "set_tracer_provider", set_providers.append)
+    set_log_providers: list[LoggerProvider] = []
+    monkeypatch.setattr(otel, "set_logger_provider", set_log_providers.append)
+    otel.setup_otel("svc")
+
+    tracer_down: list[int] = []
+    log_down: list[int] = []
+    monkeypatch.setattr(set_providers[0], "shutdown", lambda: tracer_down.append(1))
+    monkeypatch.setattr(set_log_providers[0], "shutdown", lambda: log_down.append(1))
+
+    otel.shutdown()
+    otel.shutdown()
+
+    assert tracer_down == [1]
+    assert log_down == [1]
+    assert otel.active_logger_provider() is None
+    assert otel._configured is False
+
+
+def test_shutdown_after_setup_flushes_without_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real providers against a dead endpoint: shutdown must flush queued spans without raising."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:1")  # nothing listens here
+    otel.setup_otel("svc")
+    with trace.get_tracer("flush-test").start_as_current_span("op"):
+        pass
+
+    otel.shutdown()
+
+    assert otel._configured is False
+    assert otel.active_logger_provider() is None
 
 
 # --- structlog → OTel logs bridge ---
