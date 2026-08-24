@@ -97,7 +97,8 @@ def _respond(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     output_tool = info.output_tools[0]
     # JSON-string args so the CV validates in JSON mode: the shared models are
     # strict, and python-mode validation rejects enum values given as strings.
-    return ModelResponse(parts=[ToolCallPart(tool_name=output_tool.name, args=canned_cv().model_dump_json(exclude={"personal_info"}))])
+    output_args = canned_cv().model_dump_json(exclude={"personal_info"})
+    return ModelResponse(parts=[ToolCallPart(tool_name=output_tool.name, args=output_args)])
 
 
 def build_fake_model() -> FunctionModel:
