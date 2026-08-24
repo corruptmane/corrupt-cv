@@ -174,6 +174,15 @@ spec:
       # the runner gives up on its own after its 120s poll bound.
       activeDeadlineSeconds: 300
       template:
+        metadata:
+          labels:
+            # W10 NetworkPolicy hook: CronJob-generated pods get only a
+            # per-run batch.kubernetes.io/job-name (cvgen-synthetic-<ts>),
+            # so this stable pod-template label is what
+            # cvgen-synthetic-egress in deploy/k8s/infra/netpol.yaml selects
+            # to grant the probe its public HTTPS egress. Additive only —
+            # nothing reads it besides the NetworkPolicy.
+            app: cvgen-synthetic
         spec:
           restartPolicy: Never
           containers:
