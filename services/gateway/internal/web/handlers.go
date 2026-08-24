@@ -210,6 +210,14 @@ func (s *Server) handleJobCreate(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "internal error")
 		return
 	}
+	switch err := validateJobSizes(jobDescription, profile.CareerText); {
+	case errors.Is(err, ErrJobDescriptionTooLong):
+		c.String(http.StatusBadRequest, "Job description is too long (limit 20,000 characters). Please shorten it and try again.")
+		return
+	case errors.Is(err, ErrCareerTextTooLong):
+		c.String(http.StatusBadRequest, "Your saved career history is too long (limit 100,000 characters). Please shorten it on the home page and try again.")
+		return
+	}
 	if strings.TrimSpace(profile.CareerText) == "" || len(profile.PersonalInfo) == 0 {
 		redirectWithError(c, "Your profile needs career history and personal details first.")
 		return

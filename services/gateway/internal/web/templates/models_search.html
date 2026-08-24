@@ -3,7 +3,7 @@
   {{range .}}
   <li>
     <button type="button" class="model-option"
-      onclick="selectModel({{.GetKey}}, {{.GetDisplayName}})">
+      data-key="{{.GetKey}}" data-name="{{.GetDisplayName}}">
       <span class="model-name">{{.GetDisplayName}}</span>
       <span class="model-key">{{.GetKey}}</span>
       {{if .GetDescription}}<span class="model-desc">{{.GetDescription}}</span>{{end}}

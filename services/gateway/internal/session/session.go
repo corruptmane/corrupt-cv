@@ -55,7 +55,9 @@ func Verify(value string, secret []byte) (string, bool) {
 
 // Middleware validates the visitor cookie, issuing a fresh one when it
 // is missing or invalid, and stores the visitor id on the gin context.
-func Middleware(secret []byte) gin.HandlerFunc {
+// secure sets the Secure attribute on issued cookies (enable behind
+// TLS).
+func Middleware(secret []byte, secure bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var visitorID string
 		if value, err := c.Cookie(CookieName); err == nil {
@@ -66,7 +68,7 @@ func Middleware(secret []byte) gin.HandlerFunc {
 		if visitorID == "" {
 			visitorID = uuid.NewString()
 			c.SetSameSite(http.SameSiteLaxMode)
-			c.SetCookie(CookieName, Sign(visitorID, secret), cookieMaxAge, "/", "", false, true)
+			c.SetCookie(CookieName, Sign(visitorID, secret), cookieMaxAge, "/", "", secure, true)
 		}
 		c.Set(contextKey, visitorID)
 		c.Next()

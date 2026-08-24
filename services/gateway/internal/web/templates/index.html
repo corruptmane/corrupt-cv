@@ -95,13 +95,5 @@
   {{end}}
 </section>
 
-<script>
-  // Called by the /models/search partial when a model is picked.
-  function selectModel(key, displayName) {
-    document.getElementById('model_key').value = key;
-    document.getElementById('model_search').value = displayName;
-    document.getElementById('model-results').innerHTML = '';
-    document.getElementById('model-selected').textContent = 'Selected: ' + displayName + ' (' + key + ')';
-  }
-</script>
+<script src="/static/models.js" defer></script>
 {{end}}

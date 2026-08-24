@@ -33,6 +33,21 @@ import (
 // consumer exhausts its delivery attempts.
 const advisorySubject = "$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES." + jetstream.StreamName + ".>"
 
+// advisoryQueueGroup distributes advisory delivery across gateway
+// replicas so exactly one of them reacts to a poisoned job.
+const advisoryQueueGroup = "cvgen-advisories"
+
+// advisorySubscriber is the subset of *nats.Conn the runner needs to
+// watch advisories; it exists so the queue-group wiring is testable.
+type advisorySubscriber interface {
+	QueueSubscribe(subj, queue string, cb nats.MsgHandler) (*nats.Subscription, error)
+}
+
+// subscribeAdvisory registers the max-deliveries advisory watcher.
+func subscribeAdvisory(conn advisorySubscriber, handler nats.MsgHandler) (*nats.Subscription, error) {
+	return conn.QueueSubscribe(advisorySubject, advisoryQueueGroup, handler)
+}
+
 // maxDeliveriesError is the user-safe error stored on jobs whose
 // events could not be processed within MaxDeliver attempts.
 const maxDeliveriesError = "processing failed repeatedly"
@@ -40,9 +55,10 @@ const maxDeliveriesError = "processing failed repeatedly"
 // Runner owns the background goroutines that project events into the
 // jobs table.
 type Runner struct {
-	js  natsjs.JetStream
-	st  *store.Store
-	log *slog.Logger
+	js   natsjs.JetStream
+	conn advisorySubscriber
+	st   *store.Store
+	log  *slog.Logger
 
 	tracer      oteltrace.Tracer
 	jobsTotal   metric.Int64Counter
@@ -71,6 +87,7 @@ func NewRunner(js natsjs.JetStream, st *store.Store, log *slog.Logger) *Runner {
 	}
 	return &Runner{
 		js:          js,
+		conn:        js.Conn(),
 		st:          st,
 		log:         log,
 		tracer:      otel.Tracer(telemetry.ScopeName),
@@ -105,7 +122,7 @@ func (r *Runner) Start(ctx context.Context) error {
 	}
 	r.consumeCtx = cc
 
-	sub, err := r.js.Conn().Subscribe(advisorySubject, r.handleAdvisory)
+	sub, err := subscribeAdvisory(r.conn, r.handleAdvisory)
 	if err != nil {
 		cc.Stop()
 		return fmt.Errorf("subscribe advisories: %w", err)

@@ -33,13 +33,14 @@ var staticFS embed.FS
 
 // Server wires the web handlers to their dependencies.
 type Server struct {
-	st      *store.Store
-	cat     *catalog.Catalog
-	js      natsjs.JetStream
-	pub     *jetstream.Publisher
-	keys    *apikeys.Store
-	objects *s3.Client
-	log     *slog.Logger
+	st           *store.Store
+	cat          *catalog.Catalog
+	js           natsjs.JetStream
+	pub          *jetstream.Publisher
+	keys         *apikeys.Store
+	objects      *s3.Client
+	log          *slog.Logger
+	maxBodyBytes int64
 
 	tmplIndex  *template.Template
 	tmplJob    *template.Template
@@ -48,15 +49,16 @@ type Server struct {
 
 // New builds the Server and parses the embedded templates.
 func New(st *store.Store, cat *catalog.Catalog, js natsjs.JetStream, pub *jetstream.Publisher,
-	keys *apikeys.Store, objects *s3.Client, log *slog.Logger) *Server {
+	keys *apikeys.Store, objects *s3.Client, maxBodyBytes int64, log *slog.Logger) *Server {
 	return &Server{
-		st:      st,
-		cat:     cat,
-		js:      js,
-		pub:     pub,
-		keys:    keys,
-		objects: objects,
-		log:     log,
+		st:           st,
+		cat:          cat,
+		js:           js,
+		pub:          pub,
+		keys:         keys,
+		objects:      objects,
+		log:          log,
+		maxBodyBytes: maxBodyBytes,
 
 		tmplIndex:  template.Must(template.ParseFS(templateFS, "templates/base.html", "templates/index.html")),
 		tmplJob:    template.Must(template.ParseFS(templateFS, "templates/base.html", "templates/job.html")),
@@ -65,10 +67,12 @@ func New(st *store.Store, cat *catalog.Catalog, js natsjs.JetStream, pub *jetstr
 }
 
 // Router builds the gin engine with the session middleware and all
-// application routes. When tracing is true (telemetry enabled) each
-// request runs under an otelgin server span — the POST /jobs span is
-// the root of the whole pipeline trace. Static assets are excluded.
-func (s *Server) Router(sessionSecret []byte, tracing bool) *gin.Engine {
+// application routes. secureCookies sets the Secure attribute on the
+// visitor cookie (and gates HSTS). When tracing is true (telemetry
+// enabled) each request runs under an otelgin server span — the POST
+// /jobs span is the root of the whole pipeline trace. Static assets
+// are excluded.
+func (s *Server) Router(sessionSecret []byte, secureCookies bool, tracing bool) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	if tracing {
@@ -77,7 +81,8 @@ func (s *Server) Router(sessionSecret []byte, tracing bool) *gin.Engine {
 		})))
 	}
 	r.Use(s.requestLogger())
-	r.Use(session.Middleware(sessionSecret))
+	r.Use(s.securityHeaders(secureCookies))
+	r.Use(session.Middleware(sessionSecret, secureCookies))
 
 	staticSub, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -86,8 +91,8 @@ func (s *Server) Router(sessionSecret []byte, tracing bool) *gin.Engine {
 	r.StaticFS("/static", http.FS(staticSub))
 
 	r.GET("/", s.handleIndex)
-	r.POST("/profile", s.handleProfileSave)
-	r.POST("/jobs", s.handleJobCreate)
+	r.POST("/profile", s.limitRequestBody(), s.handleProfileSave)
+	r.POST("/jobs", s.limitRequestBody(), s.handleJobCreate)
 	r.GET("/jobs/:id", s.handleJobPage)
 	r.GET("/jobs/:id/events", s.handleJobEvents)
 	r.GET("/jobs/:id/download", s.handleJobDownload)

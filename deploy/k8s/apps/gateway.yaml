@@ -42,6 +42,8 @@ spec:
               value: nats://nats.cvgen.svc:4222
             - name: VALKEY_URL
               value: valkey://valkey.cvgen.svc:6379
+            - name: COOKIE_SECURE
+              value: "true"
             - name: MODEL_CATALOG_PATH
               value: /etc/cvgen/model-catalog.yaml
             - name: S3_USE_PATH_STYLE

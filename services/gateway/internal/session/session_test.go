@@ -1,9 +1,12 @@
 package session
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -70,5 +73,47 @@ func TestVerifyRejectsMalformed(t *testing.T) {
 		if _, ok := Verify(value, secret); ok {
 			t.Errorf("Verify(%q) succeeded, want rejection", value)
 		}
+	}
+}
+
+func TestMiddlewareCookieAttributes(t *testing.T) {
+	cases := []struct {
+		name       string
+		secure     bool
+		wantSecure bool
+	}{
+		{"insecure", false, false},
+		{"secure", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.GET("/", Middleware([]byte("test-secret"), tc.secure), func(c *gin.Context) {
+				c.Status(200)
+			})
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+			var cookie *http.Cookie
+			for _, c := range rec.Result().Cookies() {
+				if c.Name == CookieName {
+					cookie = c
+					break
+				}
+			}
+			if cookie == nil {
+				t.Fatal("no cv_visitor cookie issued")
+			}
+			if cookie.Secure != tc.wantSecure {
+				t.Fatalf("cookie Secure = %v, want %v", cookie.Secure, tc.wantSecure)
+			}
+			if !cookie.HttpOnly {
+				t.Error("cookie must remain HttpOnly")
+			}
+			if _, ok := Verify(cookie.Value, []byte("test-secret")); !ok {
+				t.Errorf("issued cookie %q does not verify", cookie.Value)
+			}
+		})
 	}
 }

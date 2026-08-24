@@ -53,6 +53,15 @@ type Object struct {
 	ContentLength *int64
 }
 
+// HeadBucket verifies that the configured bucket is reachable. It is
+// the readiness probe for object storage.
+func (c *Client) HeadBucket(ctx context.Context) error {
+	if _, err := c.s3.HeadBucket(ctx, &awss3.HeadBucketInput{Bucket: aws.String(c.bucket)}); err != nil {
+		return fmt.Errorf("head bucket %s: %w", c.bucket, err)
+	}
+	return nil
+}
+
 // Get streams an object from the bucket. Returns ErrNotFound when the
 // key (or bucket) does not exist.
 func (c *Client) Get(ctx context.Context, key string) (*Object, error) {

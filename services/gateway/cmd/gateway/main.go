@@ -66,6 +66,25 @@ func newLogger(level string, otelEnabled bool) *slog.Logger {
 	return slog.New(handler)
 }
 
+// newServers builds the app and ops HTTP servers with the shared
+// timeout posture: fast header reads, bounded idle keep-alives, and no
+// write deadline (the SSE stream may legitimately pause for minutes).
+func newServers(cfg config.Config, appHandler, opsHandler http.Handler) (*http.Server, *http.Server) {
+	appSrv := &http.Server{
+		Addr:              cfg.AppAddr,
+		Handler:           appHandler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	opsSrv := &http.Server{
+		Addr:              cfg.OpsAddr,
+		Handler:           opsHandler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	return appSrv, opsSrv
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -93,6 +112,9 @@ func run() error {
 
 	log := newLogger(cfg.LogLevel, otelEnabled)
 	slog.SetDefault(log)
+	if warn, insecure := cfg.InsecureSecretWarning(); insecure {
+		log.Warn(warn)
+	}
 
 	bootCtx, bootCancel := context.WithTimeout(rootCtx, 30*time.Second)
 	defer bootCancel()
@@ -209,18 +231,9 @@ func run() error {
 		UsePathStyle: cfg.S3UsePathStyle,
 	})
 	gin.SetMode(gin.ReleaseMode)
-	webServer := web.New(st, cat, js, jetstream.NewPublisher(js), keys, objects, log)
+	webServer := web.New(st, cat, js, jetstream.NewPublisher(js), keys, objects, cfg.MaxBodyBytes, log)
 
-	appSrv := &http.Server{
-		Addr:              cfg.AppAddr,
-		Handler:           webServer.Router([]byte(cfg.SessionSecret), otelEnabled),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	opsSrv := &http.Server{
-		Addr:              cfg.OpsAddr,
-		Handler:           ops.Handler(pool, nc, ready),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	appSrv, opsSrv := newServers(cfg, webServer.Router([]byte(cfg.SessionSecret), cfg.CookieSecure, otelEnabled), ops.Handler(pool, nc, ready, ops.ValkeyPinger{Client: valkeyClient}, objects))
 
 	errCh := make(chan error, 2)
 	go func() {

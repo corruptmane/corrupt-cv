@@ -9,6 +9,9 @@ metadata:
   namespace: cvgen
 spec:
   backoffLimit: 3
+  # Completed migration Jobs are swept after an hour so the namespace
+  # does not accumulate immutable cvgen-migrate objects across rollouts.
+  ttlSecondsAfterFinished: 3600
   template:
     spec:
       restartPolicy: Never
