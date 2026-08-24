@@ -1,6 +1,7 @@
 """Service entrypoint: bind to JetStream and consume cv.*.requested until signalled."""
 
 import asyncio
+import contextlib
 import signal
 
 import structlog
@@ -45,7 +46,9 @@ async def _run() -> None:
         log.info("service ready", nats_url=settings.nats_url, ops_port=settings.ops_port)
 
         handler = JobHandler(js=js, kv=kv, valkey=valkey)
-        consume = asyncio.create_task(run_pull_loop(consumer, handler, service=SERVICE, heartbeat_s=30))
+        consume = asyncio.create_task(
+            run_pull_loop(consumer, handler, service=SERVICE, stop_event=stop, heartbeat_s=30)
+        )
         stop_wait = asyncio.create_task(stop.wait())
         try:
             done, _ = await asyncio.wait({consume, stop_wait}, return_when=asyncio.FIRST_COMPLETED)
@@ -53,7 +56,23 @@ async def _run() -> None:
                 consume.result()  # surface an unexpected consumer-loop crash
         finally:
             stop_wait.cancel()
-            consume.cancel()
+            if stop.is_set():
+                # Graceful drain: give the in-flight message time to finish
+                # (ack/term/nak) instead of cancelling mid-handler, which
+                # abandons GETDEL-consumed work to redelivery.
+                done2, _ = await asyncio.wait({consume}, timeout=settings.drain_timeout_s)
+                if consume in done2:
+                    consume.result()  # surface an unexpected consumer-loop crash
+                else:
+                    log.warning(
+                        "drain timeout exceeded, cancelling mid-handler",
+                        drain_timeout_s=settings.drain_timeout_s,
+                    )
+                    consume.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await consume
+            else:
+                consume.cancel()
     finally:
         ready = False
         log.info("shutting down")

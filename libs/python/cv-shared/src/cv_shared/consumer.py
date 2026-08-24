@@ -28,20 +28,28 @@ async def run_pull_loop(
     handler: Handler,
     *,
     service: str,
+    stop_event: asyncio.Event | None = None,
     heartbeat_s: float = 30.0,
     fetch_timeout_s: float = 5.0,
     nak_delay_s: float = 10.0,
 ) -> None:
-    """Fetch messages one at a time and dispatch to handler until cancelled.
+    """Fetch messages one at a time and dispatch to handler until cancelled or stopped.
 
     handler returns → ack; handler raises TerminalError → term (no
     redelivery); anything else → nak with delay. While the handler runs,
     in_progress() heartbeats extend the ack deadline past ack_wait for
     long LLM calls.
+
+    Drain semantics: once stop_event is set, the loop finishes the
+    in-flight message (through ack/term/nak) and then returns instead of
+    fetching again, so a shutdown signal never abandons a half-handled
+    job to redelivery.
     """
     log = structlog.get_logger(service)
     tracer = trace.get_tracer(service)
     while True:
+        if stop_event is not None and stop_event.is_set():
+            return
         try:
             # A quiet interval yields an empty list, not an exception; the
             # defensive catch covers request-level natsio timeouts (which
@@ -76,6 +84,10 @@ async def run_pull_loop(
                     log.exception("handler failed, nak for redelivery", subject=msg.subject)
                     await msg.nak(delay=nak_delay_s)
                 else:
+                    # Residual window: an external cancel landing between handler
+                    # return and this ack abandons the message un-acked (it will
+                    # be redelivered); accepted at a 90s drain budget rather than
+                    # shielding the ack.
                     await msg.ack()
                 finally:
                     heartbeat.cancel()
