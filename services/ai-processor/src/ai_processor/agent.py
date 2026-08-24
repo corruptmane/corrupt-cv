@@ -5,11 +5,11 @@ import json
 from collections.abc import Sequence
 
 import structlog
-from cv_shared.models import CV
+from cv_shared.models import CV, Education, Experience, Language, Project, Skill
 from cv_shared.proto_convert import personal_info_from_proto
 from cvgen.cv.v1 import cv_pb2
 from opentelemetry import trace
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent, ModelSettings, capture_run_messages
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models import Model
@@ -17,7 +17,25 @@ from pydantic_ai.models import Model
 from ai_processor.prompts import SYSTEM_PROMPT, user_prompt
 
 log = structlog.get_logger("ai_processor.agent")
-cv_agent = Agent[None, CV](output_type=CV, instructions=SYSTEM_PROMPT, retries=3)
+
+
+class GeneratedCV(BaseModel):
+    """The model's output contract: professional content only.
+
+    Contact data is deliberately absent — the request proto is authoritative
+    and merged in after validation, so weak models can never fail the job on
+    fields whose values would be discarded anyway.
+    """
+
+    summary: str
+    experience: list[Experience]
+    education: list[Education]
+    skills: list[Skill]
+    projects: list[Project] = []
+    languages: list[Language] = []
+
+
+cv_agent = Agent[None, GeneratedCV](output_type=GeneratedCV, instructions=SYSTEM_PROMPT, retries=3)
 tracer = trace.get_tracer("ai_processor.agent")
 
 _DIGEST_HEX_CHARS = 12
@@ -30,10 +48,11 @@ async def generate_cv(
     career_text: str,
     job_description: str,
 ) -> CV:
-    """Run the agent and force personal_info back to the request's values.
+    """Run the agent and merge its output with the request's contact data.
 
-    The model sees the personal info as context but must never control
-    contact data, so the request's proto is authoritative.
+    The model produces professional content only: personal_info never
+    enters its output contract, so the request's proto is authoritative
+    by construction rather than by post-hoc overwrite.
     """
     info = personal_info_from_proto(personal_info)
     prompt = user_prompt(
@@ -47,8 +66,7 @@ async def generate_cv(
         except UnexpectedModelBehavior as exc:
             _log_run_diagnostics(messages, exc)
             raise
-    cv = result.output
-    cv.personal_info = info
+    cv = CV(personal_info=info, **result.output.model_dump())
     return cv
 
 

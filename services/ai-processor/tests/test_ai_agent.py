@@ -35,3 +35,32 @@ async def test_fake_model_produces_valid_cv_with_personal_info_override() -> Non
     assert cv.summary
     assert cv.experience
     assert cv.skills
+
+
+async def test_output_schema_sent_to_models_excludes_personal_info() -> None:
+    """W9-followup: contact data never reaches the model's output contract."""
+    import json
+
+    import pytest
+    from pydantic_ai import UnexpectedModelBehavior
+    from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    captured: dict = {}
+
+    def _spy(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if "schema" not in captured:
+            captured["schema"] = info.output_tools[0].parameters_json_schema
+        return ModelResponse(parts=[ToolCallPart(tool_name=info.output_tools[0].name, args="{}")])
+
+    with pytest.raises(UnexpectedModelBehavior):
+        await generate_cv(
+            FunctionModel(_spy, model_name="schema-spy"),
+            personal_info=_personal_info(),
+            career_text="x",
+            job_description="y",
+        )
+
+    schema = captured["schema"]
+    assert "summary" in json.dumps(schema)
+    assert "personal_info" not in json.dumps(schema)
