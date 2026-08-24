@@ -3,7 +3,7 @@
 # Uses the fake/canned-cv model so no API key is needed.
 set -euo pipefail
 
-BASE="${BASE:-http://localhost:8080}"
+BASE="${BASE_URL:-http://localhost:8080}"
 COMPOSE_FILE="deploy/compose/compose.yaml"
 COOKIES="$(mktemp /tmp/cvgen-cookies.XXXXXX)"
 PDF="$(mktemp /tmp/cvgen-download.XXXXXX.pdf)"
