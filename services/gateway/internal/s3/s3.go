@@ -53,11 +53,28 @@ type Object struct {
 	ContentLength *int64
 }
 
-// HeadBucket verifies that the configured bucket is reachable. It is
-// the readiness probe for object storage.
+// probeKey is HeadObject'd by the readiness probe. The key intentionally
+// does not exist: a NoSuchKey 404 is the healthy signal (network up,
+// authn OK, object-action authorized), because the cvgen IAM user
+// deliberately has no bucket-level permissions — infra/opentofu/iam.tf
+// grants only GetObject/PutObject on cvs/*, so HeadBucket would 403
+// forever.
+const probeKey = "cvs/.readyz-probe"
+
+// HeadBucket verifies that object storage is reachable AND that the app
+// credentials are authorized against it. It is the readiness probe for
+// object storage.
 func (c *Client) HeadBucket(ctx context.Context) error {
-	if _, err := c.s3.HeadBucket(ctx, &awss3.HeadBucketInput{Bucket: aws.String(c.bucket)}); err != nil {
-		return fmt.Errorf("head bucket %s: %w", c.bucket, err)
+	_, err := c.s3.HeadObject(ctx, &awss3.HeadObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(probeKey),
+	})
+	if err != nil {
+		var noKey *types.NotFound
+		if errors.As(err, &noKey) {
+			return nil
+		}
+		return fmt.Errorf("probe object storage (head %s): %w", probeKey, err)
 	}
 	return nil
 }
