@@ -1,7 +1,7 @@
 """Converters between the pydantic CV models and cvgen.cv.v1 protobuf messages."""
 
 from cvgen.cv.v1 import cv_pb2
-from pydantic import HttpUrl
+from pydantic import HttpUrl, ValidationError
 
 from cv_shared.models import (
     CV,
@@ -15,6 +15,11 @@ from cv_shared.models import (
     Skill,
 )
 
+
+class ContractViolation(ValueError):
+    """A proto payload violates the CV contract; the message names the field, never the value."""
+
+
 _PROFICIENCY_TO_PROTO: dict[LanguageProficiency, cv_pb2.LanguageProficiency.ValueType] = {
     LanguageProficiency.NATIVE: cv_pb2.LANGUAGE_PROFICIENCY_NATIVE,
     LanguageProficiency.FLUENT: cv_pb2.LANGUAGE_PROFICIENCY_FLUENT,
@@ -23,6 +28,42 @@ _PROFICIENCY_TO_PROTO: dict[LanguageProficiency, cv_pb2.LanguageProficiency.Valu
     LanguageProficiency.BASIC: cv_pb2.LANGUAGE_PROFICIENCY_BASIC,
 }
 _PROFICIENCY_FROM_PROTO = {v: k for k, v in _PROFICIENCY_TO_PROTO.items()}
+
+
+def failure_detail(exc: Exception) -> str:
+    """Safe terminal-failure detail for JobFailed copy: exception class plus field context only.
+
+    Never includes payload contents (PII discipline) — pydantic errors are reduced to their
+    loc/type codes, and only ContractViolation messages (payload-free by contract) pass through.
+    """
+    if isinstance(exc, ValidationError):
+        locs = "; ".join(
+            ".".join(str(part) for part in error["loc"]) or "<root>" for error in exc.errors(include_url=False)
+        )
+        return f"{type(exc).__name__}: {locs}"
+    if isinstance(exc, ContractViolation):
+        return f"{type(exc).__name__}: {exc}"
+    return type(exc).__name__
+
+
+def _http_url(value: str, field: str) -> HttpUrl:
+    try:
+        return HttpUrl(value)
+    except ValidationError as exc:
+        reasons = ", ".join(error["type"] for error in exc.errors(include_url=False))
+        raise ContractViolation(f"{field}: invalid URL ({reasons})") from None
+
+
+def _proficiency_from_proto(value: cv_pb2.LanguageProficiency.ValueType) -> LanguageProficiency:
+    # UNSPECIFIED (0) and any out-of-range id are invalid input, not a silent default.
+    try:
+        return _PROFICIENCY_FROM_PROTO[value]
+    except KeyError:
+        try:
+            name = cv_pb2.LanguageProficiency.Name(value)
+        except ValueError:
+            name = str(value)
+        raise ContractViolation(f"languages[].proficiency: unsupported value {name}") from None
 
 
 def personal_info_to_proto(info: PersonalInfo) -> cv_pb2.PersonalInfo:
@@ -45,7 +86,7 @@ def personal_info_from_proto(pb: cv_pb2.PersonalInfo) -> PersonalInfo:
         phone=pb.phone if pb.HasField("phone") else None,
         location_city=pb.location_city,
         location_country=pb.location_country,
-        links=[Link(label=link.label, url=HttpUrl(link.url)) for link in pb.links],
+        links=[Link(label=link.label, url=_http_url(link.url, "personal_info.links[].url")) for link in pb.links],
     )
 
 
@@ -125,12 +166,12 @@ def cv_from_proto(pb: cv_pb2.CV) -> CV:
             Project(
                 name=p.name,
                 description=p.description,
-                url=HttpUrl(p.url) if p.HasField("url") else None,
+                url=_http_url(p.url, "projects[].url") if p.HasField("url") else None,
                 technologies=list(p.technologies),
             )
             for p in pb.projects
         ],
         languages=[
-            Language(name=lang.name, proficiency=_PROFICIENCY_FROM_PROTO[lang.proficiency]) for lang in pb.languages
+            Language(name=lang.name, proficiency=_proficiency_from_proto(lang.proficiency)) for lang in pb.languages
         ],
     )

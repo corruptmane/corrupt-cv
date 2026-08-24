@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 import typst
-from cv_generator.handler import RENDER_ERROR, JobHandler
+from cv_generator.handler import INVALID_INPUT_ERROR, RENDER_ERROR, JobHandler
 from cv_shared.consumer import TerminalError
 from cvgen.cv.v1 import cv_pb2
 from cvgen.events.v1 import events_pb2
@@ -67,30 +67,31 @@ class FakeStorage:
         self.written.append((key, data))
 
 
-def _structured_msg() -> JsMsg:
-    structured = events_pb2.JobStructured(
-        job_id=JOB_ID,
-        cv=cv_pb2.CV(
-            personal_info=cv_pb2.PersonalInfo(
-                name="Jane Doe",
-                email="jane.doe@example.com",
-                location_city="Lviv",
-                location_country="Ukraine",
-            ),
-            summary="Backend engineer.",
-            experience=[
-                cv_pb2.Experience(
-                    company="Acme Corp",
-                    position="Engineer",
-                    start_date="2021-01",
-                    location="Lviv, Ukraine",
-                    description="Platform team.",
-                    highlights=["Did things."],
-                )
-            ],
-            skills=[cv_pb2.Skill(category="Languages", items=["Python"])],
+def _valid_cv() -> cv_pb2.CV:
+    return cv_pb2.CV(
+        personal_info=cv_pb2.PersonalInfo(
+            name="Jane Doe",
+            email="jane.doe@example.com",
+            location_city="Lviv",
+            location_country="Ukraine",
         ),
+        summary="Backend engineer.",
+        experience=[
+            cv_pb2.Experience(
+                company="Acme Corp",
+                position="Engineer",
+                start_date="2021-01",
+                location="Lviv, Ukraine",
+                description="Platform team.",
+                highlights=["Did things."],
+            )
+        ],
+        skills=[cv_pb2.Skill(category="Languages", items=["Python"])],
     )
+
+
+def _structured_msg(cv: cv_pb2.CV | None = None) -> JsMsg:
+    structured = events_pb2.JobStructured(job_id=JOB_ID, cv=cv if cv is not None else _valid_cv())
     structured.occurred_at.GetCurrentTime()
     return cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.structured", data=structured.SerializeToString()))
 
@@ -196,3 +197,61 @@ async def test_non_transient_publish_failure_propagates_without_retry(sleep_call
 
     assert js.attempts == 1  # non-transport errors must not be retried
     assert sleep_calls == []  # zero retry sleeps
+
+
+def _published_failure(js: FakeJetStream) -> events_pb2.JobFailed:
+    assert len(js.published) == 1
+    subject, payload, _headers, _msg_id = js.published[0]
+    assert subject == f"cv.{JOB_ID}.failed"
+    failed = events_pb2.JobFailed()
+    failed.ParseFromString(payload)
+    return failed
+
+
+async def test_malformed_payload_is_terminal_and_publishes_invalid_input() -> None:
+    js = FakeJetStream()
+
+    # A poison payload must terminate the job (term, no redelivery), never let a
+    # raw DecodeError escape into the nak loop.
+    with pytest.raises(TerminalError):
+        await _handler(js, FakeRenderer(), FakeStorage())(
+            cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.structured", data=b"\x00\xffnot-a-proto-message"))
+        )
+
+    failed = _published_failure(js)
+    assert failed.job_id == JOB_ID  # identity recovered from the subject, not the payload
+    assert failed.stage == events_pb2.JOB_STAGE_RENDERING
+    assert failed.error.startswith(INVALID_INPUT_ERROR)
+    assert "DecodeError" in failed.error
+    # PII discipline: the detail names the failure class, never the payload bytes.
+    assert "\x00\xff" not in failed.error
+    assert "not-a-proto" not in failed.error
+
+
+async def test_invalid_link_url_is_terminal_invalid_input_with_field_detail() -> None:
+    js = FakeJetStream()
+    cv = _valid_cv()
+    cv.personal_info.links.add(label="GitHub", url="notaurl")
+
+    with pytest.raises(TerminalError):
+        await _handler(js, FakeRenderer(), FakeStorage())(_structured_msg(cv))
+
+    failed = _published_failure(js)
+    assert failed.stage == events_pb2.JOB_STAGE_RENDERING
+    assert failed.error.startswith(INVALID_INPUT_ERROR)
+    assert "url" in failed.error  # field context surfaces; values never do
+    assert "notaurl" not in failed.error
+
+
+async def test_unspecified_proficiency_is_terminal_invalid_input() -> None:
+    js = FakeJetStream()
+    cv = _valid_cv()
+    cv.languages.add(name="Ukrainian", proficiency=cv_pb2.LANGUAGE_PROFICIENCY_UNSPECIFIED)
+
+    with pytest.raises(TerminalError):
+        await _handler(js, FakeRenderer(), FakeStorage())(_structured_msg(cv))
+
+    failed = _published_failure(js)
+    assert failed.stage == events_pb2.JOB_STAGE_RENDERING
+    assert failed.error.startswith(INVALID_INPUT_ERROR)
+    assert "proficiency" in failed.error

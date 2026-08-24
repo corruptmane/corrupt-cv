@@ -6,8 +6,16 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import cast
 
+import ai_processor.handler as handler_module
 import pytest
-from ai_processor.handler import API_KEY_MISSING_ERROR, UNKNOWN_MODEL_ERROR, JobHandler, apikey_key
+from ai_processor.handler import (
+    API_KEY_MISSING_ERROR,
+    CREDITS_EXHAUSTED_ERROR,
+    INVALID_INPUT_ERROR,
+    UNKNOWN_MODEL_ERROR,
+    JobHandler,
+    apikey_key,
+)
 from cv_shared.consumer import TerminalError
 from cv_shared.proto_convert import cv_from_proto
 from cvgen.catalog.v1 import catalog_pb2
@@ -16,6 +24,7 @@ from cvgen.events.v1 import events_pb2
 from natsio.jetstream import JsMsg
 from natsio.jetstream.context import JetStreamContext
 from natsio.kv import KeyNotFoundError, KeyValue
+from pydantic_ai.exceptions import ModelHTTPError
 from valkey.asyncio import Valkey
 
 JOB_ID = "0f9b2f6e-6f0f-4a63-9a1c-1c2d3e4f5a6b"
@@ -218,3 +227,74 @@ async def test_non_transient_publish_failure_propagates_without_retry(sleep_call
 
     assert js.attempts == 1  # non-transport errors must not be retried
     assert sleep_calls == []  # zero retry sleeps
+
+
+async def test_malformed_request_is_terminal_and_publishes_invalid_input() -> None:
+    js = FakeJetStream()
+    handler = _handler(js, FakeKV({}), FakeValkey({}))
+
+    # A poison payload must terminate the job (term, no redelivery), never let a
+    # raw DecodeError escape into the nak loop.
+    with pytest.raises(TerminalError):
+        await handler(cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.requested", data=b"\x00\xffnot-a-proto-message")))
+
+    failed = _single_failure(js)
+    assert failed.job_id == JOB_ID  # identity recovered from the subject, not the payload
+    assert failed.stage == events_pb2.JOB_STAGE_PROCESSING
+    assert failed.error.startswith(INVALID_INPUT_ERROR)
+    assert "DecodeError" in failed.error
+    # PII discipline: the detail names the failure class, never the payload bytes.
+    assert "\x00\xff" not in failed.error
+    assert "not-a-proto" not in failed.error
+
+
+async def test_invalid_personal_info_url_is_terminal_before_key_claim() -> None:
+    js = FakeJetStream()
+    model_key = "anthropic/claude-sonnet-4-5"
+    kv = FakeKV({model_key: _catalog_entry(catalog_pb2.PROVIDER_ANTHROPIC, model_key, "claude-sonnet-4-5")})
+    valkey = FakeValkey({apikey_key(JOB_ID): b"sk-test-one-shot"})
+    request = events_pb2.JobRequested(
+        job_id=JOB_ID,
+        career_text="Six years of backend work.",
+        job_description="Platform engineer.",
+        personal_info=cv_pb2.PersonalInfo(
+            name="Jane Doe",
+            email="jane.doe@example.com",
+            location_city="Lviv",
+            location_country="Ukraine",
+            links=[cv_pb2.Link(label="GitHub", url="notaurl")],
+        ),
+        model_key=model_key,
+    )
+    request.occurred_at.GetCurrentTime()
+    msg = cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.requested", data=request.SerializeToString()))
+
+    with pytest.raises(TerminalError):
+        await _handler(js, kv, valkey)(msg)
+
+    # The contract check fires before the GETDEL: a poisoned request must not
+    # burn the one-shot API key on a job that can never succeed.
+    assert valkey.getdel_calls == []
+    failed = _single_failure(js)
+    assert failed.stage == events_pb2.JOB_STAGE_PROCESSING
+    assert failed.error.startswith(INVALID_INPUT_ERROR)
+    assert "url" in failed.error  # field context surfaces; values never do
+    assert "notaurl" not in failed.error
+
+
+async def test_provider_402_is_terminal_with_credits_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def out_of_credits(*args: object, **kwargs: object) -> object:
+        raise ModelHTTPError(status_code=402, model_name="claude-sonnet-4-5", body="insufficient credits")
+
+    monkeypatch.setattr(handler_module, "generate_cv", out_of_credits)
+    js = FakeJetStream()
+    model_key = "anthropic/claude-sonnet-4-5"
+    kv = FakeKV({model_key: _catalog_entry(catalog_pb2.PROVIDER_ANTHROPIC, model_key, "claude-sonnet-4-5")})
+    handler = _handler(js, kv, FakeValkey({apikey_key(JOB_ID): b"sk-test"}))
+
+    with pytest.raises(TerminalError):
+        await handler(_requested_msg(model_key))
+
+    failed = _single_failure(js)
+    assert failed.error == CREDITS_EXHAUSTED_ERROR
+    assert "try a different model" not in failed.error  # the old generic copy must be gone
