@@ -1,5 +1,15 @@
 # Network policy (W10)
 
+> **Status: PARKED — never deployed.** This design shipped once and was
+> reverted within the hour (see
+> [incident 0011](../incidents/0011-netpol-default-deny-behind-cilium-gateway.md)):
+> vanilla NetworkPolicy is bidirectional, and behind a Cilium Gateway API
+> listener its deny-all entry shadows narrower allows at envoy's RBAC
+> enforcement point. The selector facts below (chart/operator labels,
+> per-flow ports) remain verified and will seed a CiliumNetworkPolicy
+> redesign — `fromEntities` for the host-network envoy path, FQDN-aware
+> egress for LLM APIs — before zero-trust is re-attempted.
+
 L4 segmentation for the `cvgen` namespace, defined in
 `deploy/k8s/infra/netpol.yaml` as vanilla `networking.k8s.io/v1`
 NetworkPolicies — no CiliumNetworkPolicy resources. The model is

@@ -56,7 +56,7 @@ just down                     # tear everything down, volumes included
 | `just e2e` | Full pipeline smoke test using `fake/canned-cv` |
 | `just run-gateway` / `run-ai` / `run-render` | Run one service locally against the compose infra |
 
-**Dependency automation:** [Renovate](.github/workflows/renovate.yml) runs self-hosted on Actions (config-as-code in `.github/renovate.json`) in a Sunday-morning Europe/Kiev window; patch updates automerge. It never touches `deploy/k8s/**` — Flux image automation owns those manifests, and bot commits there must not interact with image builds ([incident #9](PLATFORM-INCIDENTS.md)). Owner setup: create the Actions secret `RENOVATE_TOKEN` from a fine-grained PAT (Contents RW, Pull requests RW, Workflows RW — workflow scope is required for action bumps).
+**Dependency automation:** [Renovate](.github/workflows/renovate.yml) runs self-hosted on Actions (config-as-code in `.github/renovate.json`) in a Sunday-morning Europe/Kiev window; patch updates automerge. It never touches `deploy/k8s/**` — Flux image automation owns those manifests, and bot commits there must not interact with image builds ([incident 0009](docs/incidents/0009-ci-image-automation-loop.md)). Owner setup: create the Actions secret `RENOVATE_TOKEN` from a fine-grained PAT (Contents RW, Pull requests RW, Workflows RW — workflow scope is required for action bumps).
 
 ## Repo map
 

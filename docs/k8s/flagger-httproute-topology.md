@@ -52,7 +52,7 @@ HTTPS.
 ## The apps↔canary revert race
 
 The split between `apps` and `canary` Kustomizations has bitten once
-(PLATFORM-INCIDENTS.md §10e, "The revert race"). After a canary drill, the
+([incident 0010e](../incidents/0010-alerting-saga.md#10e-the-revert-race-a-vacuous-canary-failure)). After a canary drill, the
 revert push changed two objects — the Deployment (reconciled by `cvgen-apps`)
 and the gate thresholds (reconciled by `cvgen-canary`) — which Flux applies on
 independent schedules. The push produced two runs: the first promoted the
