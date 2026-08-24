@@ -43,5 +43,5 @@ jobs:
           # map to self-hosted configuration options. No global config file is
           # passed to the action: the repo-level .github/renovate.json is
           # autodetected as repository config.
-          RENOVATE_REPOSITORIES: corruptmane/cv
+          RENOVATE_REPOSITORIES: corruptmane/corrupt-cv
           RENOVATE_DRY_RUN: ${{ inputs.dryRun == 'full' && 'full' || 'false' }}
