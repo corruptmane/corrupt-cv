@@ -1,0 +1,47 @@
+name: renovate
+
+# Self-hosted Renovate (config-as-code in .github/renovate.json).
+#
+# Cron vs schedule: the GitHub cron below only decides WHEN runs execute
+# (UTC); the `schedule` array in renovate.json decides WHAT updates may be
+# created. Per Renovate docs, schedule "does not trigger Renovate runs;
+# rather, it acts as a filter that skips updates if the tool runs outside
+# the defined window" (https://docs.renovatebot.com/configuration-options/#schedule),
+# so we run daily and let the predicate gate updates to Sundays ("last
+# weekend day", Europe/Kiev). Daily cadence also tolerates GitHub's
+# documented delays/drops of scheduled workflows on high-load minutes.
+on:
+  schedule:
+    - cron: '0 4 * * *' # 04:00 UTC = 07:00 Kyiv (EEST) / 06:00 Kyiv (EET)
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Dry run (compute updates, create no branches/PRs)'
+        type: choice
+        default: 'false'
+        options:
+          - 'false'
+          - 'full'
+
+# The PAT in RENOVATE_TOKEN does the actual API work; GITHUB_TOKEN here stays
+# least-privilege (checkout-free run barely touches it).
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  renovate:
+    name: renovate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.2.4
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          # RENOVATE_* env vars pass through to the container by default and
+          # map to self-hosted configuration options. No global config file is
+          # passed to the action: the repo-level .github/renovate.json is
+          # autodetected as repository config.
+          RENOVATE_REPOSITORIES: corruptmane/cv
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun == 'full' && 'full' || 'false' }}

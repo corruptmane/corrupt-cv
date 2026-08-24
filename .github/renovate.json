@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "description": "Config-as-code dependency automation. Scoped AWAY from deploy/k8s/**: those manifests are owned by Flux ImageUpdateAutomation, and bot commits touching them would replay incident #9 (CI <-> image-automation loop). Code-dependency bumps elsewhere legitimately mint image builds via the ci.yaml images path filter.",
+  "timezone": "Europe/Kiev",
+  "schedule": ["* * * * 0"],
+  "lockFileMaintenance": { "enabled": true },
+  "pinDigests": true,
+  "packageRules": [
+    {
+      "matchManagers": ["dockerfile"],
+      "pinDigests": true
+    },
+    {
+      "description": "Automerge patch updates via GitHub native auto-merge (requires repo setting 'Allow auto-merge').",
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "platformAutomerge": true
+    }
+  ],
+  "dockerfile": {
+    "fileMatch": ["(^|/)Dockerfile$", "(^|/)Dockerfile\\.migrate$"]
+  },
+  "ignorePaths": ["deploy/k8s/**"]
+}
