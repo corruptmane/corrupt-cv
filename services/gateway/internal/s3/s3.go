@@ -53,27 +53,26 @@ type Object struct {
 	ContentLength *int64
 }
 
-// probeKey is fetched by the readiness probe. It intentionally does not
-// exist, and the fetch deliberately uses GET rather than HEAD: without
-// s3:ListBucket (infra/opentofu/iam.tf grants only GetObject/PutObject on
-// cvs/*), S3 answers HEAD-on-missing-key with a 403 that hides the 404 —
-// so a HEAD probe would read as Forbidden forever.
+// probeKey is written and deleted by the readiness probe. Read-probes of
+// a nonexistent key cannot work under the cvgen IAM policy
+// (infra/opentofu/iam.tf grants GetObject/PutObject/DeleteObject on cvs/*
+// but no s3:ListBucket): S3 answers reads of missing keys with
+// AccessDenied naming s3:ListBucket rather than revealing non-existence.
+// A write+delete round-trip therefore proves reachability, authn and
+// authz using only granted actions.
 const probeKey = "cvs/.readyz-probe"
 
 // HeadBucket verifies that object storage is reachable AND that the app
 // credentials are authorized against it. It is the readiness probe for
 // object storage.
 func (c *Client) HeadBucket(ctx context.Context) error {
-	_, err := c.Get(ctx, probeKey)
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, ErrNotFound):
-		// Authorized 404: network up, authn OK, object-action allowed.
-		return nil
-	default:
-		return fmt.Errorf("probe object storage: %w", err)
+	if _, err := c.Put(ctx, probeKey, []byte("ok")); err != nil {
+		return fmt.Errorf("probe object storage (put %s): %w", probeKey, err)
 	}
+	if err := c.Delete(ctx, probeKey); err != nil {
+		return fmt.Errorf("probe object storage (delete %s): %w", probeKey, err)
+	}
+	return nil
 }
 
 // Get streams an object from the bucket. Returns ErrNotFound when the
