@@ -133,7 +133,7 @@ async def test_validation_errors_logged_as_structure_only() -> None:
         assert isinstance(loc, list)
         locs.append(tuple(loc))
         types.append(error["type"])
-    assert ("personal_info",) in locs
+    assert ("experience",) in locs  # GeneratedCV: first required field the payload omits
     assert "missing" in types
 
     blob = _blob(records)

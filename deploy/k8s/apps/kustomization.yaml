@@ -10,8 +10,8 @@ resources:
   - synthetic-cronjob.yaml
 images:
   - name: ghcr.io/corruptmane/cvgen-gateway
-    newTag: main-86-53485b4 # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
+    newTag: main-89-c81b880 # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
   - name: ghcr.io/corruptmane/cvgen-ai-processor
-    newTag: main-86-53485b4 # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
+    newTag: main-89-c81b880 # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
   - name: ghcr.io/corruptmane/cvgen-cv-generator
-    newTag: main-86-53485b4 # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}
+    newTag: main-89-c81b880 # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}
