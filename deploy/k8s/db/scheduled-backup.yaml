@@ -1,0 +1,16 @@
+---
+# Nightly base backups of cvgen-db (ADR 0008 Postgres choice). SIX-FIELD
+# cron (seconds first): daily at 03:30 UTC; adjust the minute/hour fields
+# Single-instance reality: with instances=1 there is no replica, so backups
+# run on the primary — expect brief WAL/archive load at 03:30.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: cvgen-db-scheduled
+  namespace: cvgen
+spec:
+  schedule: "0 30 3 * * *"
+  immediate: true
+  backupOwnerReference: cluster
+  cluster:
+    name: cvgen-db

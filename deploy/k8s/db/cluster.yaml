@@ -16,3 +16,38 @@ spec:
     initdb:
       database: cvgen
       owner: cvgen
+  # Backups to S3 via barmanObjectStore (ADR 0008 Postgres; ADR 0013 secret
+  # chain). Three verified facts behind this block:
+  #
+  # 1. The operator is CNPG 1.28.x, where the native barmanObjectStore is
+  #    deprecated upstream (the webhook emits a warning event; the
+  #    recommended path is the Barman Cloud CNPG-I plugin). It remains fully
+  #    functional — the deprecation is accepted deliberately per owner
+  #    decision log; revisit when the plugin lands in this setup.
+  #
+  # 2. ${CVGEN_BACKUP_DESTINATION} is NOT a shell/env variable and CNPG does
+  #    zero env expansion in destinationPath. It is substituted by the FLEET
+  #    Flux Kustomization postBuild.substituteFrom (Secret cvgen-db-backup)
+  #    BEFORE apply — the placeholder never reaches the API server as-is,
+  #    and a failed substitution fails reconciliation loudly, by design.
+  #
+  # 3. Adding .spec.backup to the RUNNING cluster does not restart pods or
+  #    rebuild PVCs: archive_mode is already on and archive_command is fixed
+  #    at /controller/manager wal-archive; the instance manager picks up
+  #    archiving dynamically. Only setting endpointCA would roll pods — we
+  #    set none (AWS-native S3, verified).
+  backup:
+    barmanObjectStore:
+      destinationPath: ${CVGEN_BACKUP_DESTINATION}
+      s3Credentials:
+        accessKeyId:
+          name: cvgen-db-backup
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cvgen-db-backup
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: "30d"
