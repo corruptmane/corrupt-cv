@@ -1,5 +1,6 @@
 """Message handler: JobStructured -> Typst PDF -> S3 -> JobRendered | JobFailed."""
 
+import asyncio
 from typing import NoReturn, Protocol
 
 import structlog
@@ -25,6 +26,8 @@ tracer = trace.get_tracer("cv_generator.handler")
 
 
 class RendererLike(Protocol):
+    """Synchronous typst compiler facade; the handler runs it via asyncio.to_thread, off the event loop."""
+
     def render(self, cv_json: str) -> bytes: ...
 
 
@@ -60,8 +63,14 @@ class JobHandler:
             await self._fail(job_id, INVALID_INPUT_ERROR, detail=detail)
 
         try:
+            # F13: compile off the event loop. Caveat: typst-py 0.15.0 does NOT release the
+            # GIL during compile (no PyO3 allow_threads anywhere in messense/typst-py src),
+            # so the worker thread still blocks the interpreter and heartbeats may stall
+            # during pathological compiles; realistic compiles are sub-second, severity low.
+            # to_thread stays per owner decision: it isolates the blocking call behind the
+            # standard offload seam and marginally improves shutdown responsiveness.
             with tracer.start_as_current_span("typst.render"):
-                pdf = self._renderer.render(cv_json)
+                pdf = await asyncio.to_thread(self._renderer.render, cv_json)
         except typst.TypstError as exc:
             log.warning("typst rendering failed", job_id=job_id, error=str(exc))
             await self._fail(job_id, RENDER_ERROR)

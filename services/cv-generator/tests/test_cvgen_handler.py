@@ -1,6 +1,7 @@
 """Handler unit tests with fake js/renderer/storage objects (no network)."""
 
 import asyncio
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -48,8 +49,10 @@ class FakeRenderer:
     def __init__(self, *, error: Exception | None = None) -> None:
         self.error = error
         self.rendered: list[str] = []
+        self.render_threads: list[int] = []
 
     def render(self, cv_json: str) -> bytes:
+        self.render_threads.append(threading.get_ident())
         if self.error is not None:
             raise self.error
         self.rendered.append(cv_json)
@@ -133,6 +136,19 @@ async def test_success_uploads_pdf_and_publishes_job_rendered() -> None:
     assert rendered.job_id == JOB_ID
     assert rendered.pdf_object_key == f"cvs/{JOB_ID}.pdf"
     assert rendered.HasField("occurred_at")
+
+
+async def test_render_runs_off_the_event_loop_thread() -> None:
+    # F13/W8: the sync typst compile must not occupy the event-loop thread.
+    js = FakeJetStream()
+    renderer = FakeRenderer()
+    storage = FakeStorage()
+    loop_thread = threading.get_ident()
+
+    await _handler(js, renderer, storage)(_structured_msg())
+
+    assert len(renderer.render_threads) == 1
+    assert renderer.render_threads[0] != loop_thread
 
 
 async def test_typst_error_is_terminal_and_publishes_job_failed() -> None:
