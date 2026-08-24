@@ -15,12 +15,12 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	catalogv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/catalog/v1"
-	cvv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/cv/v1"
-	eventsv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/events/v1"
-	"github.com/corruptmane/cv/services/gateway/internal/s3"
-	"github.com/corruptmane/cv/services/gateway/internal/session"
-	"github.com/corruptmane/cv/services/gateway/internal/store"
+	catalogv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/catalog/v1"
+	cvv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/cv/v1"
+	eventsv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/events/v1"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/s3"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/session"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/store"
 )
 
 // profileForm is the flattened profile as shown in the index form.

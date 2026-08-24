@@ -183,8 +183,8 @@ const file_cvgen_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x0fPROVIDER_OPENAI\x10\x02\x12\x13\n" +
 	"\x0fPROVIDER_GOOGLE\x10\x03\x12\x11\n" +
 	"\rPROVIDER_FAKE\x10\x04\x12\x17\n" +
-	"\x13PROVIDER_OPENROUTER\x10\x05B\xd1\x01\n" +
-	"\x14com.cvgen.catalog.v1B\fCatalogProtoP\x01ZIgithub.com/corruptmane/cv/services/gateway/gen/cvgen/catalog/v1;catalogv1\xa2\x02\x03CCX\xaa\x02\x10Cvgen.Catalog.V1\xca\x02\x10Cvgen\\Catalog\\V1\xe2\x02\x1cCvgen\\Catalog\\V1\\GPBMetadata\xea\x02\x12Cvgen::Catalog::V1b\x06proto3"
+	"\x13PROVIDER_OPENROUTER\x10\x05B\xd9\x01\n" +
+	"\x14com.cvgen.catalog.v1B\fCatalogProtoP\x01ZQgithub.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/catalog/v1;catalogv1\xa2\x02\x03CCX\xaa\x02\x10Cvgen.Catalog.V1\xca\x02\x10Cvgen\\Catalog\\V1\xe2\x02\x1cCvgen\\Catalog\\V1\\GPBMetadata\xea\x02\x12Cvgen::Catalog::V1b\x06proto3"
 
 var (
 	file_cvgen_catalog_v1_catalog_proto_rawDescOnce sync.Once

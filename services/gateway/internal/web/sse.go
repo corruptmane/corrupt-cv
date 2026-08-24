@@ -12,9 +12,9 @@ import (
 	natsjs "github.com/nats-io/nats.go/jetstream"
 	"google.golang.org/protobuf/proto"
 
-	eventsv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/events/v1"
-	"github.com/corruptmane/cv/services/gateway/internal/jetstream"
-	"github.com/corruptmane/cv/services/gateway/internal/store"
+	eventsv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/events/v1"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/jetstream"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/store"
 )
 
 // StatusUpdate is the JSON payload of the SSE "status" event.

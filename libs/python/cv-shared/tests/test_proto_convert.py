@@ -57,7 +57,7 @@ FULL_CV = CV(
         Project(
             name="cvgen",
             description="This project.",
-            url=HttpUrl("https://github.com/corruptmane/cv"),
+            url=HttpUrl("https://github.com/corruptmane/corrupt-cv"),
             technologies=["Go", "Python", "NATS"],
         ),
         Project(name="sideproj", description="No URL project."),

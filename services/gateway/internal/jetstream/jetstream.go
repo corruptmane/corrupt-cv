@@ -17,8 +17,8 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 
-	eventsv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/events/v1"
-	"github.com/corruptmane/cv/services/gateway/internal/telemetry"
+	eventsv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/events/v1"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/telemetry"
 )
 
 // Contract constants shared by every service in the pipeline.

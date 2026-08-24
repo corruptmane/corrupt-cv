@@ -23,10 +23,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	eventsv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/events/v1"
-	"github.com/corruptmane/cv/services/gateway/internal/jetstream"
-	"github.com/corruptmane/cv/services/gateway/internal/store"
-	"github.com/corruptmane/cv/services/gateway/internal/telemetry"
+	eventsv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/events/v1"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/jetstream"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/store"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/telemetry"
 )
 
 // advisorySubject matches server advisories emitted when any CV_EVENTS

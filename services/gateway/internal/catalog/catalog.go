@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
-	catalogv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/catalog/v1"
+	catalogv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/catalog/v1"
 )
 
 type yamlEntry struct {

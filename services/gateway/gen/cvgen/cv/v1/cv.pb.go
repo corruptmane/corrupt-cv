@@ -736,8 +736,8 @@ const file_cvgen_cv_v1_cv_proto_rawDesc = "" +
 	"\x1bLANGUAGE_PROFICIENCY_FLUENT\x10\x02\x12%\n" +
 	"!LANGUAGE_PROFICIENCY_PROFESSIONAL\x10\x03\x12%\n" +
 	"!LANGUAGE_PROFICIENCY_INTERMEDIATE\x10\x04\x12\x1e\n" +
-	"\x1aLANGUAGE_PROFICIENCY_BASIC\x10\x05B\xa9\x01\n" +
-	"\x0fcom.cvgen.cv.v1B\aCvProtoP\x01Z?github.com/corruptmane/cv/services/gateway/gen/cvgen/cv/v1;cvv1\xa2\x02\x03CCX\xaa\x02\vCvgen.Cv.V1\xca\x02\vCvgen\\Cv\\V1\xe2\x02\x17Cvgen\\Cv\\V1\\GPBMetadata\xea\x02\rCvgen::Cv::V1b\x06proto3"
+	"\x1aLANGUAGE_PROFICIENCY_BASIC\x10\x05B\xb1\x01\n" +
+	"\x0fcom.cvgen.cv.v1B\aCvProtoP\x01ZGgithub.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/cv/v1;cvv1\xa2\x02\x03CCX\xaa\x02\vCvgen.Cv.V1\xca\x02\vCvgen\\Cv\\V1\xe2\x02\x17Cvgen\\Cv\\V1\\GPBMetadata\xea\x02\rCvgen::Cv::V1b\x06proto3"
 
 var (
 	file_cvgen_cv_v1_cv_proto_rawDescOnce sync.Once

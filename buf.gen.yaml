@@ -3,7 +3,7 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/corruptmane/cv/services/gateway/gen
+      value: github.com/corruptmane/corrupt-cv/services/gateway/gen
 plugins:
   - remote: buf.build/protocolbuffers/go
     out: services/gateway/gen

@@ -13,7 +13,7 @@ import (
 
 	natsjs "github.com/nats-io/nats.go/jetstream"
 
-	catalogv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/catalog/v1"
+	catalogv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/catalog/v1"
 )
 
 const testYAML = `models:

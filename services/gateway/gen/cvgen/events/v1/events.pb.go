@@ -7,7 +7,7 @@
 package eventsv1
 
 import (
-	v1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/cv/v1"
+	v1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/cv/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -383,8 +383,8 @@ const file_cvgen_events_v1_events_proto_rawDesc = "" +
 	"\bJobStage\x12\x19\n" +
 	"\x15JOB_STAGE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14JOB_STAGE_PROCESSING\x10\x01\x12\x17\n" +
-	"\x13JOB_STAGE_RENDERING\x10\x02B\xc9\x01\n" +
-	"\x13com.cvgen.events.v1B\vEventsProtoP\x01ZGgithub.com/corruptmane/cv/services/gateway/gen/cvgen/events/v1;eventsv1\xa2\x02\x03CEX\xaa\x02\x0fCvgen.Events.V1\xca\x02\x0fCvgen\\Events\\V1\xe2\x02\x1bCvgen\\Events\\V1\\GPBMetadata\xea\x02\x11Cvgen::Events::V1b\x06proto3"
+	"\x13JOB_STAGE_RENDERING\x10\x02B\xd1\x01\n" +
+	"\x13com.cvgen.events.v1B\vEventsProtoP\x01ZOgithub.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/events/v1;eventsv1\xa2\x02\x03CEX\xaa\x02\x0fCvgen.Events.V1\xca\x02\x0fCvgen\\Events\\V1\xe2\x02\x1bCvgen\\Events\\V1\\GPBMetadata\xea\x02\x11Cvgen::Events::V1b\x06proto3"
 
 var (
 	file_cvgen_events_v1_events_proto_rawDescOnce sync.Once

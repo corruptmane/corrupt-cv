@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/corruptmane/cv/services/gateway/internal/config"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/config"
 )
 
 // Both servers must share the exact timeout posture: fast header

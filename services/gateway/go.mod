@@ -1,4 +1,4 @@
-module github.com/corruptmane/cv/services/gateway
+module github.com/corruptmane/corrupt-cv/services/gateway
 
 go 1.26.2
 

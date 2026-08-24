@@ -25,16 +25,16 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/corruptmane/cv/services/gateway/internal/apikeys"
-	"github.com/corruptmane/cv/services/gateway/internal/catalog"
-	"github.com/corruptmane/cv/services/gateway/internal/config"
-	"github.com/corruptmane/cv/services/gateway/internal/jetstream"
-	"github.com/corruptmane/cv/services/gateway/internal/jobs"
-	"github.com/corruptmane/cv/services/gateway/internal/ops"
-	"github.com/corruptmane/cv/services/gateway/internal/s3"
-	"github.com/corruptmane/cv/services/gateway/internal/store"
-	"github.com/corruptmane/cv/services/gateway/internal/telemetry"
-	"github.com/corruptmane/cv/services/gateway/internal/web"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/apikeys"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/catalog"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/config"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/jetstream"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/jobs"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/ops"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/s3"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/store"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/telemetry"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/web"
 )
 
 func main() {

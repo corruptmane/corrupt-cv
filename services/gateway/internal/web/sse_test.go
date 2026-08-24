@@ -5,8 +5,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	eventsv1 "github.com/corruptmane/cv/services/gateway/gen/cvgen/events/v1"
-	"github.com/corruptmane/cv/services/gateway/internal/store"
+	eventsv1 "github.com/corruptmane/corrupt-cv/services/gateway/gen/cvgen/events/v1"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/store"
 )
 
 const testJobID = "3fa9f34a-6a7d-4a1f-9df0-1c2b3d4e5f60"

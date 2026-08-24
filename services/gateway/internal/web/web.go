@@ -17,12 +17,12 @@ import (
 	natsjs "github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
-	"github.com/corruptmane/cv/services/gateway/internal/apikeys"
-	"github.com/corruptmane/cv/services/gateway/internal/catalog"
-	"github.com/corruptmane/cv/services/gateway/internal/jetstream"
-	"github.com/corruptmane/cv/services/gateway/internal/s3"
-	"github.com/corruptmane/cv/services/gateway/internal/session"
-	"github.com/corruptmane/cv/services/gateway/internal/store"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/apikeys"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/catalog"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/jetstream"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/s3"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/session"
+	"github.com/corruptmane/corrupt-cv/services/gateway/internal/store"
 )
 
 //go:embed templates/*.html
