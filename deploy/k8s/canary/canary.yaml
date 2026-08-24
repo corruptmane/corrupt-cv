@@ -10,7 +10,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: gateway
-  progressDeadlineSeconds: 600
+  progressDeadlineSeconds: 900
   service:
     port: 80
     targetPort: 8080

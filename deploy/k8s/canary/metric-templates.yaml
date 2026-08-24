@@ -15,9 +15,9 @@ spec:
     type: prometheus
     address: http://vmsingle-victoria-metrics-victoria-metrics-k8s-stack.monitoring.svc:8428
   query: |
-    100 * sum(rate(http_server_request_duration_seconds_count{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*",http_response_status_code!~"5.."}[{{ interval }}]))
+    100 * sum(rate(http_server_request_duration_seconds_count{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*",http_response_status_code!~"5.."}[2m]))
     /
-    sum(rate(http_server_request_duration_seconds_count{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*"}[{{ interval }}]))
+    sum(rate(http_server_request_duration_seconds_count{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*"}[2m]))
 ---
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
@@ -29,4 +29,4 @@ spec:
     type: prometheus
     address: http://vmsingle-victoria-metrics-victoria-metrics-k8s-stack.monitoring.svc:8428
   query: |
-    histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*"}[{{ interval }}])))
+    histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="gateway",service_instance_id=~"{{ target }}-.*",service_instance_id!~"{{ target }}-primary-.*"}[2m])))

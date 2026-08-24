@@ -50,6 +50,11 @@ spec:
               value: "false"
             - name: LOG_LEVEL
               value: INFO
+            # Halve the metric export period so canary analysis windows
+            # find fresh samples immediately after a weight shift (incident-
+            # class: "no values found" halts eating progressDeadline).
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "30000"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector-opentelemetry-collector.monitoring.svc:4318
             - name: OTEL_SERVICE_NAME
