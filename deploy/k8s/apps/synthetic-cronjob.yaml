@@ -1,0 +1,205 @@
+---
+# W12 blackbox synthetic probe: an hourly in-cluster CronJob that walks the
+# whole production pipeline end-to-end exactly the way scripts/e2e.sh smokes
+# the compose stack — session cookie, profile POST, job POST with
+# model_key=fake/canned-cv, bounded poll until completed, PDF download with
+# a %PDF magic-byte check. The runner.sh below is that flow as slim POSIX sh
+# + curl, mounted into a curlimages/curl pod: no cvgen image, no API key,
+# no secrets involved.
+#
+# FAKE MODEL ONLY: the probe exercises everything except real LLM cost —
+# session handling, NATS JetStream handoff, ai-processor, Typst render,
+# S3 upload and the gateway's download stream.
+#
+# ANONYMOUS VISITOR BY DESIGN: the probe carries no credentials, so every
+# run is indistinguishable from one more anonymous browser session. The
+# profile/job rows it leaves in Postgres are visitor-scoped history
+# pollution — harmless, and deliberately not cleaned up (a cleanup path
+# would need privileged access the probe must not have).
+#
+# FAILURE VISIBILITY rides kube-state-metrics, not the probe's own exit
+# code: a failed run marks its Job failed, kube-state-metrics exports
+# kube_job_status_failed{namespace="cvgen",job_name=~"cvgen-synthetic.*"},
+# and the SyntheticJobFailed rule in deploy/k8s/alerting/golden-signals.yaml
+# alerts off it — that VMRule (docs/k8s/alerting.md §Synthetic job failures)
+# is the single place this alert contract is defined.
+#
+# TARGETING: BASE_URL defaults to the public https://cv.corruptmane.xyz so
+# the probe traverses what a user traverses — public DNS, Cloudflare TLS,
+# the Cilium Gateway listener — rather than the Flagger loadtester's
+# in-cluster Service shortcut (cilium-gateway-cvgen-gateway.cvgen.svc with
+# a -host override), which proves reachability but skips the front door.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cvgen-synthetic-script
+  namespace: cvgen
+data:
+  # The script lives in a ConfigMap (mounted read-only at /script) so the
+  # whole probe stays declarative and reviewable. POSIX sh + curl only:
+  # the image's busybox userland covers mktemp/tr/awk/sed/grep/head/wc.
+  runner.sh: |
+    #!/bin/sh
+    # Blackbox synthetic probe (W12): mirrors scripts/e2e.sh's flow against
+    # a live cvgen endpoint using the fake model only (zero LLM cost):
+    # session cookie -> profile POST -> job POST (fake/canned-cv) ->
+    # bounded poll until completed -> PDF download + %PDF magic check.
+    # POSIX sh + curl only; runs as-is in curlimages/curl (busybox).
+    #
+    # Poll bound: 60 polls x 2s = 120s. Fake-model jobs complete in seconds
+    # on the compose stack (e2e.sh allows 90s); production adds public
+    # DNS/TLS and cross-service hops, so 120s keeps ~2x headroom while
+    # staying well under the CronJob's activeDeadlineSeconds of 300.
+    set -eu
+
+    BASE_URL="${BASE_URL:-https://cv.corruptmane.xyz}"
+    WORK="$(mktemp -d /tmp/cvgen-synthetic.XXXXXX)"
+    COOKIES="$WORK/cookies"
+    PDF="$WORK/cv.pdf"
+    trap 'rm -rf "$WORK"' EXIT INT TERM
+
+    fail() {
+        echo "FAIL: $*" >&2
+        exit 1
+    }
+
+    step() {
+        echo "==> $*"
+    }
+
+    CAREER_TEXT='Backend engineer with 8 years of experience building distributed systems.
+    2018-2020: Junior/Mid engineer at Fintech startup PayFlow (Kyiv).
+    Built payment reconciliation pipelines in Python, moved batch jobs to Celery.
+    Introduced integration testing and cut regression incidents roughly in half.
+    2020-2022: Backend engineer at DataMesh Labs.
+    Owned a Go ingestion service handling ~40k events/sec over Kafka.
+    Designed idempotent consumers and exactly-once sink semantics into ClickHouse.
+    Led migration from a monolith to six services with gRPC contracts.
+    2022-2025: Senior backend engineer at CloudNorth.
+    Ran the internal platform team: Kubernetes, Helm, ArgoCD, Terraform on AWS.
+    Built a multi-tenant job scheduler in Go with Postgres and NATS JetStream.
+    Reduced p99 API latency from 900ms to 120ms via caching and query rewrites.
+    Mentored four engineers; ran architecture reviews and incident postmortems.
+    Comfortable with Go, Python, Postgres, NATS, Kafka, Kubernetes, Terraform.
+    Looking for staff/platform roles with strong infrastructure ownership.'
+
+    JOB_DESCRIPTION='We are hiring a Senior Platform Engineer to own our internal developer
+    platform. You will design and operate Kubernetes-based infrastructure,
+    build golden-path deployment tooling, and improve observability across
+    40+ microservices. Requirements: strong Go or Python, deep Postgres and
+    messaging experience (Kafka/NATS), infrastructure-as-code (Terraform),
+    and a track record of mentoring engineers. Nice to have: GitOps (Flux or
+    ArgoCD), progressive delivery, and experience running incident response.'
+
+    # --- 1. Session cookie ----------------------------------------------------
+    step "GET / (session cookie)"
+    curl -fsS -c "$COOKIES" -o /dev/null "$BASE_URL/" || fail "GET / failed"
+
+    # --- 2. Profile -----------------------------------------------------------
+    step "POST /profile"
+    curl -fsS -b "$COOKIES" -c "$COOKIES" -o /dev/null "$BASE_URL/profile" \
+        --data-urlencode "name=Danylo Marchenko" \
+        --data-urlencode "email=danylo.marchenko@example.com" \
+        --data-urlencode "city=Kyiv" \
+        --data-urlencode "country=Ukraine" \
+        --data-urlencode "links=https://github.com/dmarchenko https://linkedin.com/in/dmarchenko" \
+        --data-urlencode "career_text=$CAREER_TEXT" \
+        || fail "POST /profile failed"
+
+    # --- 3. Job (fake model, NO api key) ---------------------------------------
+    step "POST /jobs (model_key=fake/canned-cv)"
+    headers="$(curl -sS -i -b "$COOKIES" -c "$COOKIES" -o /dev/stdout "$BASE_URL/jobs" \
+        --data-urlencode "job_description=$JOB_DESCRIPTION" \
+        --data-urlencode "model_key=fake/canned-cv")" || fail "POST /jobs failed"
+
+    location="$(printf '%s' "$headers" | tr -d '\r' | awk 'tolower($1)=="location:" {print $2; exit}')"
+    [ -n "$location" ] || fail "POST /jobs returned no Location header"
+    job_id="$(basename "$location")"
+    [ -n "$job_id" ] || fail "could not extract job id from Location: $location"
+    echo "    job_id=$job_id"
+
+    # --- 4. Bounded poll until completed ----------------------------------------
+    step "polling GET /api/jobs/$job_id (60 polls x 2s)"
+    status=""
+    n=0
+    while [ "$n" -lt 60 ]; do
+        body="$(curl -fsS -b "$COOKIES" "$BASE_URL/api/jobs/$job_id")" \
+            || fail "GET /api/jobs/$job_id failed"
+        status="$(printf '%s' "$body" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+        case "$status" in
+            completed)
+                echo "    completed after $n poll(s)"
+                break
+                ;;
+            failed)
+                fail "job $job_id failed; response: $body"
+                ;;
+        esac
+        n=$((n + 1))
+        sleep 2
+    done
+    [ "$status" = "completed" ] ||
+        fail "job $job_id did not complete within 60 polls x 2s (last status: ${status:-unknown})"
+
+    # --- 5. Download + PDF magic check ------------------------------------------
+    step "GET /jobs/$job_id/download"
+    curl -fsSL -b "$COOKIES" -o "$PDF" "$BASE_URL/jobs/$job_id/download" || fail "download failed"
+
+    magic="$(head -c 4 "$PDF")"
+    [ "$magic" = "%PDF" ] || fail "downloaded file is not a PDF (first bytes: $magic)"
+    size="$(wc -c < "$PDF" | tr -d ' ')"
+    echo "PASS: synthetic probe ok (job $job_id, ${size}-byte PDF, %PDF magic verified)"
+---
+# Hourly blackbox probe. The name MUST stay cvgen-synthetic: the scheduler
+# creates Jobs named cvgen-synthetic-<timestamp>, which is exactly what the
+# SyntheticJobFailed VMRule's job_name regex matches (see the overview
+# comment above for the failure-visibility contract).
+#
+# schedule uses the STANDARD 5-field cron syntax (batch/v1: minute hour
+# day-of-month month day-of-week) — NOT the 6-field seconds-first form that
+# CNPG's CronJob CRD takes; "0 * * * *" is top of every hour.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cvgen-synthetic
+  namespace: cvgen
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Last-resort leash (hung curl, stalled node), not the expected path:
+      # the runner gives up on its own after its 120s poll bound.
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: probe
+              # Pinned to the current release (2026-06-24); tag existence
+              # verified against the Docker Hub registry API
+              # (hub.docker.com/v2/repositories/curlimages/curl/tags/8.21.0)
+              # and github.com/curl/curl-container releases.
+              image: curlimages/curl:8.21.0
+              command:
+                - sh
+                - /script/runner.sh
+              env:
+                - name: BASE_URL
+                  value: https://cv.corruptmane.xyz
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  memory: 64Mi
+              volumeMounts:
+                - name: script
+                  mountPath: /script
+                  readOnly: true
+          volumes:
+            - name: script
+              configMap:
+                name: cvgen-synthetic-script

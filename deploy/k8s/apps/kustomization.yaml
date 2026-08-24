@@ -7,6 +7,7 @@ resources:
   - gateway.yaml
   - ai-processor.yaml
   - cv-generator.yaml
+  - synthetic-cronjob.yaml
 images:
   - name: ghcr.io/corruptmane/cvgen-gateway
     newTag: main-62-cfe6d0d # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
