@@ -21,6 +21,7 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       k8s: ${{ steps.filter.outputs.k8s }}
       images: ${{ steps.filter.outputs.images }}
+      tofu: ${{ steps.filter.outputs.tofu }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -43,6 +44,8 @@ jobs:
               - 'proto/**'
             k8s:
               - 'deploy/k8s/**'
+            tofu:
+              - 'infra/opentofu/**'
             # Anything that changes what ships inside an image. Bot commits
             # from Flux image automation touch only deploy/k8s, so they must
             # NOT trigger image builds — new builds mint new sortable tags,
@@ -174,6 +177,25 @@ jobs:
               -schema-location default \
               -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           done
+
+  tofu:
+    needs: changes
+    if: needs.changes.outputs.tofu == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/opentofu
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+      - run: tofu fmt -check -recursive
+      # -backend=false skips the partial s3 backend (bucket/table/profile live
+      # in the gitignored backend.hcl), so no AWS credentials are needed here.
+      - run: tofu init -backend=false
+      - run: tofu validate
 
   e2e:
     needs: changes
