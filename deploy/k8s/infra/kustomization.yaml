@@ -9,3 +9,4 @@ resources:
   - flagger-loadtester.yaml
   - nats.yaml
   - valkey.yaml
+  - fleet-inputs.yaml

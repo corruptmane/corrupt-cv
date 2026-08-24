@@ -1,0 +1,56 @@
+---
+# cvgen-fleet-inputs — documentation-as-data: the single grepplable source
+# for every identifier this repo shares with the homelab fleet repo
+# (corruptmane/homelab). Ownership split per ADR 0012 (this repo owns
+# manifests, the fleet repo owns the Flux GitRepository + Kustomization
+# pointers under apps/cvgen/); secret delivery per ADR 0013 (tofu -> SSM ->
+# ESO -> Secret).
+#
+# DECLARED, NOT TEMPLATED: nothing consumes this ConfigMap programmatically
+# — no valuesFrom, no postBuild.substitutions reads it. Every value below
+# stays hardcoded at its point of use; this manifest exists so an auditor or
+# incident responder can enumerate every cross-repo identifier in one file,
+# then jump straight to its consumers:
+#
+#   cluster_secret_store     deploy/k8s/apps/externalsecret.yaml:12-14
+#                            deploy/k8s/secrets/backup-external-secret.yaml:28-30
+#   ssm_params_cvgen_owned   infra/opentofu/ssm.tf:7,13,19,25,31,44 (writer)
+#                            deploy/k8s/apps/externalsecret.yaml:21-36 (reader)
+#   ssm_params_backup        deploy/k8s/secrets/backup-external-secret.yaml:45-51
+#   otel_collector_endpoint  deploy/k8s/apps/gateway.yaml:52
+#                            deploy/k8s/apps/ai-processor.yaml:33
+#                            deploy/k8s/apps/cv-generator.yaml:38
+#   vmsingle_url             deploy/k8s/canary/metric-templates.yaml:16,30
+#                            deploy/k8s/infra/flagger.yaml:28
+#   dns_host                 deploy/k8s/apps/gateway-api.yaml:22,26
+#                            deploy/k8s/apps/certificate.yaml:10
+#                            deploy/k8s/canary/canary.yaml:18,50
+#   cert_cluster_issuer      deploy/k8s/apps/certificate.yaml:11-13
+#   storage_class            deploy/k8s/db/cluster.yaml:14
+#                            deploy/k8s/infra/nats.yaml:33
+#
+# Renaming any value here means updating this file,
+# docs/k8s/fleet-contract.md, and the homelab counterpart in the SAME PR.
+# The full contract — inventory table, ownership split, change protocol —
+# lives in docs/k8s/fleet-contract.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cvgen-fleet-inputs
+  namespace: cvgen # matches the deploy/k8s dir convention; this ConfigMap is
+  # consumed by HUMANS and grep, not by controllers — no RBAC, no
+  # valuesFrom wiring points at it, by design.
+data:
+  cluster_secret_store: "aws-ssm" # kind ClusterSecretStore, region eu-central-1; the store object itself is fleet-owned
+  ssm_prefix_fleet_owned: "/homelab/**" # parameter namespace reserved fleet-side; everything cvgen writes lives under it
+  ssm_params_cvgen_owned: "/homelab/cvgen-s3-endpoint,/homelab/cvgen-s3-region,/homelab/cvgen-s3-bucket,/homelab/cvgen-s3-access-key-id,/homelab/cvgen-s3-secret-access-key,/homelab/cvgen-session-secret" # written by infra/opentofu/ssm.tf, read by deploy/k8s/apps/externalsecret.yaml
+  ssm_params_backup: "/homelab/cnpg-backup-access-key-id,/homelab/cnpg-backup-secret-access-key,/homelab/cnpg-backup-bucket-name" # consumed by deploy/k8s/secrets/backup-external-secret.yaml into Secret cvgen-db-backup; bucket-name param is created MANUALLY in homelab-private tofu (owner step)
+  alertmanager_url: "http://vmalertmanager-alertmanager.monitoring.svc:9093/api/v2/alerts" # fleet-side Alertmanager -> Telegram pipe (ADR 0015); referenced in this repo's docs only
+  otel_collector_endpoint: "http://otel-collector-opentelemetry-collector.monitoring.svc:4318" # OTLP/HTTP; env OTEL_EXPORTER_OTLP_ENDPOINT on all three app Deployments
+  vmsingle_url: "http://vmsingle-victoria-metrics-victoria-metrics-k8s-stack.monitoring.svc:8428" # Prometheus-compatible query API for Flagger + canary MetricTemplates
+  victoria_logs_url: "victoria-logs-victoria-logs-single-server.monitoring.svc:9428" # log query surface for first response; docs only in this repo
+  dns_host: "cv.corruptmane.xyz" # Gateway listener hostnames, Certificate dnsNames, Flagger service.hosts + loadtester -host; record managed fleet-side via external-dns
+  cert_cluster_issuer: "letsencrypt-production" # ClusterIssuer, Cloudflare DNS01; fleet-owned
+  storage_class: "longhorn" # CNPG data PVC + NATS JetStream fileStore PVC; Longhorn is fleet-installed
+  cnpg_image_pin: "PG17 — pinned FLEET-SIDE (cluster convention); NOT declared in this repo (cluster.yaml has no imageName)"
+  flux_kustomization_chain: "infra -> secrets(new, pending fleet entry) -> db -> migrations -> apps -> canary -> image-automation -> alerting(new, pending fleet entry)" # dependsOn order of the fleet-side Kustomizations under apps/cvgen/
