@@ -1,5 +1,7 @@
 """Handler unit tests with fake js/renderer/storage objects (no network)."""
 
+import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -23,8 +25,10 @@ class FakeMsg:
 
 
 class FakeJetStream:
-    def __init__(self) -> None:
+    def __init__(self, *, errors: Sequence[Exception] | None = None) -> None:
         self.published: list[tuple[str, bytes, dict[str, str] | None, str | None]] = []
+        self.attempts = 0
+        self._errors = list(errors or [])
 
     async def publish(
         self,
@@ -34,6 +38,9 @@ class FakeJetStream:
         headers: dict[str, str] | None = None,
         msg_id: str | None = None,
     ) -> None:
+        self.attempts += 1
+        if self._errors:
+            raise self._errors.pop(0)
         self.published.append((subject, payload, headers, msg_id))
 
 
@@ -92,6 +99,19 @@ def _handler(js: FakeJetStream, renderer: FakeRenderer, storage: FakeStorage) ->
     return JobHandler(js=cast(JetStreamContext, js), renderer=renderer, storage=storage)
 
 
+@pytest.fixture
+def sleep_calls(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record asyncio.sleep delays instead of waiting; only the publish-retry path sleeps here."""
+    calls: list[float] = []
+
+    async def fake_sleep(delay: float, result: object = None) -> object:
+        calls.append(delay)
+        return result
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    return calls
+
+
 async def test_success_uploads_pdf_and_publishes_job_rendered() -> None:
     js = FakeJetStream()
     renderer = FakeRenderer()
@@ -139,3 +159,40 @@ async def test_storage_error_propagates_for_redelivery() -> None:
         await _handler(js, FakeRenderer(), FakeStorage(error=ConnectionError("s3 down")))(_structured_msg())
 
     assert js.published == []  # no rendered/failed event; nak + redelivery instead
+
+
+async def test_transient_publish_failure_is_retried_then_rendered_event_published(sleep_calls: list[float]) -> None:
+    js = FakeJetStream(errors=[TimeoutError("nats blip")])
+
+    await _handler(js, FakeRenderer(), FakeStorage())(_structured_msg())  # must not raise; the delivery must ack
+
+    assert len(js.published) == 1  # exactly ONE rendered event published
+    subject, payload, _headers, msg_id = js.published[0]
+    assert subject == f"cv.{JOB_ID}.rendered"
+    assert msg_id == f"{JOB_ID}:rendered"
+    rendered = events_pb2.JobRendered()
+    rendered.ParseFromString(payload)
+    assert rendered.job_id == JOB_ID
+    assert js.attempts == 2  # one blip, one success
+    assert sleep_calls == [1.0]  # slept once before the successful retry
+
+
+async def test_persistent_publish_failure_propagates_for_nak(sleep_calls: list[float]) -> None:
+    js = FakeJetStream(errors=[ConnectionError("nats down")] * 8)
+
+    with pytest.raises(ConnectionError):  # nak-path contract: never swallowed into _fail
+        await _handler(js, FakeRenderer(), FakeStorage())(_structured_msg())
+
+    assert js.published == []  # no rendered/failed event; nak + redelivery instead
+    assert js.attempts == 3  # retried through the full delay budget before giving up
+    assert sleep_calls == [1.0, 3.0]
+
+
+async def test_non_transient_publish_failure_propagates_without_retry(sleep_calls: list[float]) -> None:
+    js = FakeJetStream(errors=[ValueError("bad payload")])
+
+    with pytest.raises(ValueError):
+        await _handler(js, FakeRenderer(), FakeStorage())(_structured_msg())
+
+    assert js.attempts == 1  # non-transport errors must not be retried
+    assert sleep_calls == []  # zero retry sleeps

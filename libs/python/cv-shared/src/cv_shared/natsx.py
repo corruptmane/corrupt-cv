@@ -33,6 +33,8 @@ EVENT_FAILED = "failed"
 _BIND_RETRY_DELAY_S = 2.0
 _BIND_MAX_ATTEMPTS = 90
 
+_PUBLISH_RETRY_DELAYS_S: tuple[float, ...] = (1.0, 3.0)
+
 log = structlog.get_logger("cv_shared.natsx")
 
 
@@ -102,3 +104,47 @@ async def publish_event(
         # Inject inside the span so the consumer's extracted parent is this producer span.
         headers = inject_trace_headers()
         await js.publish(subject, payload, msg_id=f"{job_id}:{event}", headers=headers or None)
+
+
+async def publish_with_retry(
+    js: JetStreamContext,
+    job_id: str,
+    event: str,
+    payload: bytes,
+    *,
+    service: str,
+    delays_s: tuple[float, ...] = _PUBLISH_RETRY_DELAYS_S,
+) -> None:
+    """Publish a job event, retrying transient transport errors within this delivery.
+
+    A publish failure would otherwise nak the message and redeliver the whole
+    job — re-running the LLM call or render/S3 put just to republish a result
+    that already existed. Only conservative connection/transport errors are
+    retried (natsio request timeouts subclass builtin TimeoutError); anything
+    else, or an exhausted budget, re-raises so the caller's nak semantics apply.
+    """
+    attempts = len(delays_s) + 1
+    for attempt in range(attempts):
+        try:
+            await publish_event(js, job_id, event, payload)
+            return
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            if attempt + 1 == attempts:
+                log.warning(
+                    "publish failed, retries exhausted",
+                    service=service,
+                    job_id=job_id,
+                    event_type=event,
+                    error=str(exc),
+                )
+                raise
+            log.warning(
+                "transient publish error, retrying",
+                service=service,
+                job_id=job_id,
+                event_type=event,
+                attempt=attempt,
+                error=str(exc),
+            )
+            await asyncio.sleep(delays_s[attempt])
+    raise AssertionError("unreachable")  # pragma: no cover

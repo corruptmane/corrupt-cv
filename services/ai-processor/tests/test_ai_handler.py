@@ -1,5 +1,7 @@
 """Handler unit tests with fake js/kv/valkey objects (no network)."""
 
+import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import cast
@@ -27,8 +29,10 @@ class FakeMsg:
 
 
 class FakeJetStream:
-    def __init__(self) -> None:
+    def __init__(self, *, errors: Sequence[Exception] | None = None) -> None:
         self.published: list[tuple[str, bytes, dict[str, str] | None, str | None]] = []
+        self.attempts = 0
+        self._errors = list(errors or [])
 
     async def publish(
         self,
@@ -38,6 +42,9 @@ class FakeJetStream:
         headers: dict[str, str] | None = None,
         msg_id: str | None = None,
     ) -> None:
+        self.attempts += 1
+        if self._errors:
+            raise self._errors.pop(0)
         self.published.append((subject, payload, headers, msg_id))
 
 
@@ -84,13 +91,28 @@ def _requested_msg(model_key: str) -> JsMsg:
     return cast(JsMsg, FakeMsg(subject=f"cv.{JOB_ID}.requested", data=request.SerializeToString()))
 
 
-def _handler(js: FakeJetStream, kv: FakeKV, valkey: FakeValkey) -> JobHandler:
+def _handler(
+    js: FakeJetStream, kv: FakeKV, valkey: FakeValkey, *, retry_delays_s: tuple[float, ...] = ()
+) -> JobHandler:
     return JobHandler(
         js=cast(JetStreamContext, js),
         kv=cast(KeyValue, kv),
         valkey=cast(Valkey, valkey),
-        retry_delays_s=(),
+        retry_delays_s=retry_delays_s,
     )
+
+
+@pytest.fixture
+def sleep_calls(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record asyncio.sleep delays instead of waiting; only the retry paths sleep here."""
+    calls: list[float] = []
+
+    async def fake_sleep(delay: float, result: object = None) -> object:
+        calls.append(delay)
+        return result
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    return calls
 
 
 def _single_failure(js: FakeJetStream) -> events_pb2.JobFailed:
@@ -156,3 +178,43 @@ async def test_fake_provider_runs_agent_and_publishes_job_structured() -> None:
     assert str(cv.personal_info.email) == "jane.doe@example.com"
     assert cv.experience
     assert cv.skills
+
+
+async def test_transient_publish_failure_is_retried_then_structured_event_published(sleep_calls: list[float]) -> None:
+    js = FakeJetStream(errors=[TimeoutError("nats blip")])
+    kv = FakeKV({"fake/canned": _catalog_entry(catalog_pb2.PROVIDER_FAKE, "fake/canned", "fake")})
+    handler = _handler(js, kv, FakeValkey({}), retry_delays_s=(0.0,))
+
+    await handler(_requested_msg("fake/canned"))  # must not raise; the delivery must ack
+
+    assert len(js.published) == 1  # exactly ONE structured event published
+    subject, _payload, _headers, msg_id = js.published[0]
+    assert subject == f"cv.{JOB_ID}.structured"
+    assert msg_id == f"{JOB_ID}:structured"
+    assert js.attempts == 2  # one blip, one success
+    assert sleep_calls == [0.0]
+
+
+async def test_persistent_publish_failure_propagates_for_nak(sleep_calls: list[float]) -> None:
+    js = FakeJetStream(errors=[ConnectionError("nats down")] * 8)
+    kv = FakeKV({"fake/canned": _catalog_entry(catalog_pb2.PROVIDER_FAKE, "fake/canned", "fake")})
+    handler = _handler(js, kv, FakeValkey({}), retry_delays_s=(0.0,))
+
+    with pytest.raises(ConnectionError):  # nak-path contract: never swallowed into _fail
+        await handler(_requested_msg("fake/canned"))
+
+    assert js.published == []  # nothing published; nak + redelivery instead
+    assert js.attempts == 2  # retried through the full delay budget before giving up
+    assert sleep_calls == [0.0]
+
+
+async def test_non_transient_publish_failure_propagates_without_retry(sleep_calls: list[float]) -> None:
+    js = FakeJetStream(errors=[ValueError("bad payload")])
+    kv = FakeKV({"fake/canned": _catalog_entry(catalog_pb2.PROVIDER_FAKE, "fake/canned", "fake")})
+    handler = _handler(js, kv, FakeValkey({}), retry_delays_s=(0.0,))
+
+    with pytest.raises(ValueError):
+        await handler(_requested_msg("fake/canned"))
+
+    assert js.attempts == 1  # non-transport errors must not be retried
+    assert sleep_calls == []  # zero retry sleeps

@@ -5,7 +5,7 @@ from typing import NoReturn, Protocol
 import structlog
 import typst
 from cv_shared.consumer import TerminalError
-from cv_shared.natsx import EVENT_FAILED, EVENT_RENDERED, publish_event
+from cv_shared.natsx import EVENT_FAILED, EVENT_RENDERED, publish_event, publish_with_retry
 from cv_shared.proto_convert import cv_from_proto
 from cv_shared.typst_json import cv_to_typst_json
 from cvgen.events.v1 import events_pb2
@@ -52,14 +52,21 @@ class JobHandler:
             log.warning("typst rendering failed", job_id=job_id, error=str(exc))
             await self._fail(job_id, RENDER_ERROR)
 
-        # Storage/NATS errors propagate: nak + redelivery, the overwrite is idempotent.
+        # Storage errors propagate: nak + redelivery, the overwrite is idempotent. The result
+        # publish retries transient transport blips in-delivery first, then propagates likewise.
         key = object_key(job_id)
         with tracer.start_as_current_span("s3.put"):
             await self._storage.put_pdf(key, pdf)
 
         rendered = events_pb2.JobRendered(job_id=job_id, pdf_object_key=key)
         rendered.occurred_at.GetCurrentTime()
-        await publish_event(self._js, job_id, EVENT_RENDERED, rendered.SerializeToString())
+        await publish_with_retry(
+            self._js,
+            job_id,
+            EVENT_RENDERED,
+            rendered.SerializeToString(),
+            service="cv-generator",
+        )
         log.info("job rendered", job_id=job_id, pdf_object_key=key)
 
     async def _fail(self, job_id: str, error: str) -> NoReturn:

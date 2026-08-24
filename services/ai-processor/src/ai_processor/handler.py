@@ -6,7 +6,7 @@ from typing import NoReturn
 import structlog
 from cv_shared.consumer import TerminalError
 from cv_shared.models import CV
-from cv_shared.natsx import EVENT_FAILED, EVENT_STRUCTURED, publish_event
+from cv_shared.natsx import EVENT_FAILED, EVENT_STRUCTURED, publish_event, publish_with_retry
 from cv_shared.proto_convert import cv_to_proto
 from cvgen.catalog.v1 import catalog_pb2
 from cvgen.events.v1 import events_pb2
@@ -81,7 +81,14 @@ class JobHandler:
 
         structured = events_pb2.JobStructured(job_id=job_id, cv=cv_to_proto(cv))
         structured.occurred_at.GetCurrentTime()
-        await publish_event(self._js, job_id, EVENT_STRUCTURED, structured.SerializeToString())
+        await publish_with_retry(
+            self._js,
+            job_id,
+            EVENT_STRUCTURED,
+            structured.SerializeToString(),
+            service="ai-processor",
+            delays_s=self._retry_delays_s,
+        )
         log.info("job structured", job_id=job_id)
 
     async def _model_entry(self, job_id: str, model_key: str) -> catalog_pb2.ModelCatalogEntry:
