@@ -89,5 +89,5 @@ Alertmanager ([ADR 0015](docs/adr/0015-deployment-alerting.md)). See
 
 ## Design docs
 
-- [ADRs](docs/adr/) — fifteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, the Kubernetes/GitOps/canary platform, the natsio client, and deployment alerting.
+- [ADRs](docs/adr/) — sixteen records covering the monorepo, JetStream topology, secret handoff, storage, Typst contract, observability, sessions, the Kubernetes/GitOps/canary platform, the natsio client, deployment alerting, and the model-catalog packaging decision.
 - [Roadmap](docs/roadmap.md) — delivered: k8s + Flux/Flagger + OpenTofu S3; next: multi-replica SSE fan-out, billing, protovalidate.
