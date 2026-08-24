@@ -10,4 +10,3 @@ resources:
   - nats.yaml
   - valkey.yaml
   - fleet-inputs.yaml
-  - netpol.yaml
