@@ -393,7 +393,7 @@ metadata:
   name: cvgen-cnpg-egress
   namespace: cvgen
 spec:
-  description: CNPG instance pods reach DNS and world for WAL/backup archive
+  description: CNPG instances reach DNS, world for WAL/backup archive, and the API server
   endpointSelector:
     matchLabels:
       cnpg.io/cluster: cvgen-db
@@ -413,6 +413,14 @@ spec:
       toPorts:
         - ports:
             - port: "443"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
               protocol: TCP
 
 ---
@@ -493,7 +501,7 @@ metadata:
   name: cvgen-allow-postgres-ingress
   namespace: cvgen
 spec:
-  description: postgres accepts gateway replicas and migration Jobs only
+  description: postgres accepts gateway replicas, migration Jobs, and the CNPG operator
   endpointSelector:
     matchLabels:
       cnpg.io/cluster: cvgen-db
@@ -510,6 +518,14 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: cnpg-system
+            k8s:app.kubernetes.io/name: cloudnative-pg
+      toPorts:
+        - ports:
+            - port: "8000"
               protocol: TCP
 
 ---
