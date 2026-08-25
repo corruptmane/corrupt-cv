@@ -76,6 +76,12 @@ hubble-ui-fwd:
 # Observe flows. The CLI must match the cluster's Cilium minor (1.18.x):
 # newer CLIs request proto fieldmasks the relay rejects ("invalid fieldmask").
 # Needs `just hubble-relay-fwd` running in another shell.
+# Kill stale hubble forwards (e.g. after a relay pod rotation left a
+# dead tunnel bound). Safe to run before either fwd recipe.
+hubble-stop:
+    pkill -f "port-forward svc/hubble-relay" || true
+    pkill -f "port-forward svc/hubble-ui" || true
+
 hubble-drops *args:
     #!/usr/bin/env sh
     if command -v hubble-1.18 >/dev/null 2>&1; then BIN=hubble-1.18; else BIN=hubble; fi

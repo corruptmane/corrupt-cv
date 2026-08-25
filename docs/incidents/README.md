@@ -34,6 +34,9 @@ named `NNNN-kebab-case-title.md`. Sections use bold labels, in this order
 | [0010](0010-alerting-saga.md) | The alerting saga (five distinct failures in one feature) |
 | [0011](0011-netpol-default-deny-behind-cilium-gateway.md) | Default-deny NetworkPolicies behind a Cilium Gateway listener (deploy rollback) |
 | [0012](0012-s3-existence-obfuscation-vs-readyz-probe.md) | S3 existence obfuscation vs the deep readiness probe |
+| [0013](0013-non-compiling-main-under-incident-pressure.md) | A non-compiling main pushed under incident pressure |
+| [0014](0014-hubble-cli-relay-version-skew.md) | Hubble CLI rejected by the cluster's own relay ("invalid fieldmask") |
+| [0015](0015-renovate-repository-slug-mismatch.md) | Renovate configured against the wrong repository slug |
 
 ## Meta-observations
 
