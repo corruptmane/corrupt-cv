@@ -168,6 +168,19 @@ jobs:
       # kustomize is preinstalled on ubuntu runners; only kubeconform is needed.
       - name: Install kubeconform
         run: curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
+      # CiliumNetworkPolicy schemas: kubeconform v0.7.0 renders
+      # {{.ResourceKind}} LOWERCASED in schema-location templates
+      # (pkg/registry/registry.go), so the datreeio catalog URL resolves to
+      # ciliumnetworkpolicy_v2.json, which exists. We still vendor a local
+      # copy as an additional file:// registry so CNP validation survives
+      # upstream renames/outages; the file MUST be saved under the lowercase
+      # name the template actually renders (a CamelCase filename 404s on a
+      # case-sensitive filesystem).
+      - name: Download Cilium CNP schema
+        run: |
+          mkdir -p /tmp/schemas/cilium.io
+          curl -fsSL 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/cilium.io/ciliumnetworkpolicy_v2.json' \
+            -o /tmp/schemas/cilium.io/ciliumnetworkpolicy_v2.json
       - name: Validate manifests
         run: |
           set -euo pipefail
@@ -175,7 +188,8 @@ jobs:
             echo "==> $dir"
             kustomize build "$dir" | kubeconform -strict -summary \
               -schema-location default \
-              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              -schema-location 'file:///tmp/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           done
 
   tofu:
