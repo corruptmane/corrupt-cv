@@ -1,72 +1,21 @@
----
-# =============================================================================
-# cvgen zero-trust L4 segmentation — CiliumNetworkPolicy set (W10 re-land)
-# =============================================================================
-# Re-land of the reverted vanilla-NetworkPolicy workstream as CNPs, after
-# incident 0011 (docs/incidents/0011-netpol-default-deny-behind-cilium-
-# gateway.md) proved two things:
+# cvgen L4 segmentation via CiliumNetworkPolicy.
 #
-#   1. Default-deny is a BIDIRECTIONAL contract: every client-side egress
-#      allow needs its server-side ingress twin, and infrastructure pods
-#      are clients too — CNPG's WAL-archiving egress froze backups silently
-#      last time it was left out.
-#   2. The enforcement point changes semantics: traffic entering through
-#      the Cilium Gateway API listener is judged inside envoy as an RBAC
-#      filter, where a blanket deny shadows narrower allows. The listener
-#      path is therefore allowed with fromEntities:[host] — the envoy that
-#      terminates cv.corruptmane.xyz runs on the HOST network, so gateway
-#      pods see connections from the node, not from pod IPs.
+# Model: explicit per-workload allows only — no namespace-wide catch-all,
+# both attempts at one backfired (docs/incidents/0016). Selectors and the
+# Gateway-listener rule are explained in docs/k8s/network-policy.md;
+# incident reports carry the deep rationale and are referenced inline.
 #
-# Model: default-deny both directions (cvgen-default-deny), then explicit
-# allows. Cilium policies are additive across documents, so file order
-# carries no enforcement semantics; the set reads top-down anyway: deny,
-# shared DNS, ingress allows, per-workload egress, server-side ingress.
-#
-# ROLLOUT: the cluster currently runs policy-audit-mode=true (fleet-side),
-# so these policies LOG would-be drops without enforcing. This is Stage 1
-# of .omo/plans/cilium-networkpolicy-zero-trust.md; Stage 2 removes the
-# flag after a clean `hubble observe --verdict AUDIT` cycle.
-#
-# LABEL CONTRACT (verified live against the cluster; full table in
-# docs/k8s/network-policy.md):
-#   - Flagger relabels the promoted primary's pods to app=gateway-primary.
-#     EVERY selector meaning "the serving gateway" lists BOTH app values —
-#     selecting only app=gateway would strand the replica actually serving.
-#   - NATS (official Helm chart) pods: app.kubernetes.io/name=nats.
-#   - CNPG stamps cnpg.io/cluster=cvgen-db on every instance pod; role
-#     labels have changed scheme before, so they are never selected on.
-#   - Migration Job pods get batch.kubernetes.io/job-name=cvgen-migrate
-#     from the Job controller — no pod-template labels required.
-#   - Cross-namespace selectors use the k8s:<label> source prefix Cilium
-#     puts on Kubernetes-derived labels; namespaces pinned via the
-#     immutable io.kubernetes.pod.namespace label.
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# 1. DEFAULT DENY — empty rule lists select-nothing-allow-nothing: every pod
-#    in cvgen denies all ingress and all egress except what later documents
-#    allow. enableDefaultDeny is spelled out so no reader has to know that
-#    "ingress: []" IS the default-deny form. A flow not covered below dies
-#    here (audit-logged until Stage 2 flips enforcement on).
-# -----------------------------------------------------------------------------
+# Cross-namespace selectors use Cilium's k8s:<label> source prefix.
 
 ---
-# 3. PUBLIC ENTRY — host-network envoy terminates the Gateway API listener,
-#    so requests reach gateway pods from the HOST entity, not from pod IPs.
-#    This is the exact path incident 0011 got wrong: vanilla NP could not
-#    name the host-envoy source, and its port-scoped no-from allow was
-#    shadowed by deny-all at envoy's RBAC point. Flagger loadtester traffic
-#    rides the same cilium-gateway VIP during canaries, so one rule covers
-#    the whole public path. Port-scoped to 8080 so the blast radius stays
-#    exactly the public listener.
-# -----------------------------------------------------------------------------
+# 1. Public entry: any source may reach the gateway pair on its app port.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: cvgen-allow-gateway-ingress
   namespace: cvgen
 spec:
-  description: public HTTP entry via host-network envoy into gateway pods
+  description: public HTTP entry into gateway pods
   endpointSelector:
     matchExpressions:
       - key: app
@@ -75,22 +24,13 @@ spec:
           - gateway
           - gateway-primary # Flagger relabels the promoted primary
   ingress:
-    # No `from` restriction: the Gateway is the public entry point — it must
-    # accept traffic from host-network envoy (external), internal pods
-    # (loadtester, synthetic probe), and world alike.
     - toPorts:
         - ports:
             - port: "8080"
               protocol: TCP
 
 ---
-# 4. OPS INGRESS — health/readyz inspection of the three services from the
-#    monitoring namespace on their ops port. Namespace-scoped (no pod
-#    selector) on purpose: a chart relabel on the scraper side must degrade
-#    to "slightly too broad", never to a dead rule. NOT metrics ingestion —
-#    telemetry rides OTLP push (egress side, see per-workload policies);
-#    the estate's only scrape is flagger itself, outside cvgen.
-# -----------------------------------------------------------------------------
+# 2. Ops-port inspection from the monitoring namespace only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -117,13 +57,7 @@ spec:
               protocol: TCP
 
 ---
-# 5. GATEWAY EGRESS — client matrix for whichever gateway replica serves
-#    (canary AND primary): Postgres job history, Valkey API-key/session
-#    writes, NATS pub/sub, OTLP push, DNS, and world HTTPS for S3 GetObject
-#    PDF downloads (ADR 0012 topology). world:443 is port-scoped, not
-#    FQDN-scoped — FQDN rules need the fleet's DNS proxy and are parked as
-#    Stage 3 in the plan.
-# -----------------------------------------------------------------------------
+# 3. Gateway clients: postgres, valkey, nats, OTLP push, DNS, S3 downloads.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -139,8 +73,6 @@ spec:
           - gateway
           - gateway-primary
   egress:
-    # Postgres: durable job history. Server side of this contract lives in
-    # cvgen-allow-postgres-ingress (incident 0011 lesson one).
     - toEndpoints:
         - matchLabels:
             cnpg.io/cluster: cvgen-db
@@ -148,7 +80,6 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
-    # Valkey: SET EX api-key provisioning + sessions (ADR 0006).
     - toEndpoints:
         - matchLabels:
             app: valkey
@@ -156,7 +87,6 @@ spec:
         - ports:
             - port: "6379"
               protocol: TCP
-    # NATS: publishes requested/rendered, consumes every event subject.
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: nats
@@ -164,10 +94,7 @@ spec:
         - ports:
             - port: "4222"
               protocol: TCP
-    # OTLP push (ADR 0010): spans/metrics/logs to the fleet collector.
-    # Namespace-scoped so a collector chart relabel degrades to broad,
-    # never to silent telemetry loss — Flagger's canary gates read these
-    # series back from VictoriaMetrics, so a dead rule stalls rollouts.
+    # Namespace-scoped so a collector chart relabel degrades to broad, never dead.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: monitoring
@@ -175,7 +102,6 @@ spec:
         - ports:
             - port: "4318"
               protocol: TCP
-    # DNS (see policy 2) + world HTTPS for S3 GetObject of rendered PDFs.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -194,11 +120,7 @@ spec:
               protocol: TCP
 
 ---
-# 6. AI-PROCESSOR EGRESS — consumes jobs off NATS, GETDELs the api key from
-#    Valkey (exactly-once handoff, ADR 0006), calls user-chosen LLM provider
-#    APIs over world HTTPS (provider set varies per request, so port-scoped
-#    only), pushes OTLP, resolves DNS.
-# -----------------------------------------------------------------------------
+# 4. ai-processor clients: nats, valkey, OTLP, DNS, LLM provider APIs.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -241,7 +163,7 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # LLM provider APIs — BYO keys, provider varies per request (README).
+    # BYO keys — provider varies per request, so port-scoped world HTTPS.
     - toEntities:
         - world
       toPorts:
@@ -250,11 +172,7 @@ spec:
               protocol: TCP
 
 ---
-# 7. CV-GENERATOR EGRESS — consumes structured events off NATS, uploads
-#    rendered PDFs to S3 (PutObject over world HTTPS), pushes OTLP,
-#    resolves DNS. No Valkey, no Postgres: it holds no session state and
-#    writes no history.
-# -----------------------------------------------------------------------------
+# 5. cv-generator clients: nats, OTLP, DNS, S3 upload. No valkey, no postgres.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -298,13 +216,7 @@ spec:
               protocol: TCP
 
 ---
-# 8. MIGRATIONS EGRESS — goose SQL migrations against Postgres plus DNS.
-#    Incident 0011 opened with this exact Job hanging on a silent TCP
-#    connect because its server-side counterpart was missing; both halves
-#    now exist (server side: cvgen-allow-postgres-ingress). Job pods carry
-#    no authored labels — the controller-stamped job-name label is the
-#    stable selector.
-# -----------------------------------------------------------------------------
+# 6. Migration Job clients: postgres plus DNS. Selector is controller-stamped.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -335,14 +247,9 @@ spec:
               protocol: TCP
 
 ---
-# 9. SYNTHETIC PROBE EGRESS — the blackbox CronJob probes
-#    https://cv.corruptmane.xyz from inside the namespace. Public DNS points
-#    that name straight at the Gateway VIP (no CDN in between), so the flow
-#    re-enters through the public listener — where enforce_policy_on_l7lb
-#    authorizes the probe against the REAL backend, gateway pods :8080.
-#    World:443 alone passes TCP and then 403s at that check; the backend
-#    allowance below is what makes the probe work.
-# -----------------------------------------------------------------------------
+# 7. Synthetic probe: gateway pods :8080 must be listed explicitly — behind
+#    the Gateway listener the client is authorized against the real backend,
+#    not the VIP (docs/incidents/0016).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -354,16 +261,6 @@ spec:
     matchLabels:
       app: cvgen-synthetic
   egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s:k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:app: gateway
@@ -379,14 +276,20 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
 
 ---
-# 10. CNPG EGRESS — the database is a CLIENT too: barman WAL archiving and
-#     ScheduledBackup push to S3 over world HTTPS, plus DNS. Incident 0011's
-#     nastiest finding was this egress silently freezing (archived_count
-#     stuck) while everything else looked alive — PITR coverage died with
-#     nobody watching the network. Never ship a default-deny without it.
-# -----------------------------------------------------------------------------
+# 8. CNPG instances are control-plane clients too: WAL archive over world
+#    HTTPS, API server for the readiness probe (docs/incidents/0017).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -398,16 +301,6 @@ spec:
     matchLabels:
       cnpg.io/cluster: cvgen-db
   egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s:k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
     - toEntities:
         - world
       toPorts:
@@ -422,14 +315,20 @@ spec:
               protocol: TCP
             - port: "6443"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
 
 ---
-# 11. VALKEY INGRESS — server side of the cache contract: the app services
-#     that hold egress allows (gateway pair, ai-processor) may connect.
-#     cv-generator appears in the source list for symmetry with the task
-#     matrix but holds NO valkey egress allow, so additive evaluation still
-#     denies it end-to-end — defense in depth, not an opening.
-# -----------------------------------------------------------------------------
+# 9. Valkey accepts the app services only. cv-generator appears here but
+#    holds no valkey egress allow, so additive evaluation still denies it.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -456,12 +355,8 @@ spec:
               protocol: TCP
 
 ---
-# 12. NATS INGRESS — server side of the event bus contract: same client set
-#     as valkey. Every pub/sub flow in the architecture (requested,
-#     structured, rendered) crosses BOTH this rule and a client egress rule;
-#     either half missing = silent stall, which is why the pair is reviewed
-#     together (incident 0011 lesson one, encoded).
-# -----------------------------------------------------------------------------
+# 10. NATS accepts the app services only; every flow needs this AND a client
+#     egress rule (docs/incidents/0011).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -488,13 +383,8 @@ spec:
               protocol: TCP
 
 ---
-# 13. POSTGRES INGRESS — server side of the database contract: the serving
-#     gateway pair (canary AND promoted primary — see label contract) and
-#     the migration Job. Deliberate deviation from the original W10 matrix,
-#     which listed only app=gateway: Flagger relabels the primary to
-#     app=gateway-primary, so the literal selector would have cut off the
-#     ONE replica taking production traffic the moment Stage 2 enforced.
-# -----------------------------------------------------------------------------
+# 11. Postgres accepts app clients on 5432 and the CNPG operator on its
+#     instance status port (docs/incidents/0017).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -529,11 +419,7 @@ spec:
               protocol: TCP
 
 ---
-# 14. LOADTESTER INGRESS — Flagger drives load tests during canary analysis
-#     from flagger-system; the loadtester Deployment (flagger-loadtester.yaml)
-#     carries the chart label app.kubernetes.io/name=loadtester. Source
-#     pinned to the flagger pods themselves, not the whole namespace.
-# -----------------------------------------------------------------------------
+# 12. Loadtester accepts Flagger webhook calls only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -555,14 +441,9 @@ spec:
               protocol: TCP
 
 ---
-# 15. LOADTESTER EGRESS — the tester targets the Gateway VIP, but with
-#     enforce_policy_on_l7lb the listener's envoy authorizes the ORIGINAL
-#     client against the REAL backend (gateway pods :8080), not the VIP.
-#     An entity-based rule for host:80 passes the TCP handshake and then
-#     dies at that check — every request 403s and Flagger sees zero traffic
-#     ("no values found" rollbacks). Select the gateway pods explicitly.
-#     Plus DNS to resolve the target hostname.
-# -----------------------------------------------------------------------------
+# 13. Loadtester targets the gateway pods directly — behind the Gateway
+#     listener the client is authorized against the real backend, not the
+#     VIP (docs/incidents/0016).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
