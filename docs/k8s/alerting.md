@@ -68,8 +68,18 @@ requests. A 15-minute hold means only persistent tail latency pages.
 
 **Expected noise** — long PDF downloads over slow client links stretching
 individual requests; canary pods landing on a contended node during a
-shift; long-lived SSE responses if otelgin records duration until stream
-close — worth confirming against real data the first time it fires.
+shift. The SSE hypothesis below was confirmed live the first time the
+alert fired and is now handled at the rule level:
+
+> **Confirmed 2026-08-25:** every real CV generation leaves one
+> `/jobs/:id/events` duration sample ≈ full render wait (~10s), because
+> otelgin records request duration until the SSE stream closes. At this
+> site's traffic (~5k fast samples vs ~10 SSE samples per 6h) those
+> samples ARE the p99 — the alert read 10s while every non-streaming
+> route sat under 10ms. `GatewayLatencyP99High` therefore excludes
+> `http_route="/jobs/:id/events"`: that series measures job pipeline
+> duration, not request latency. If generation-time visibility is ever
+> needed, model it as a job-age metric rather than an HTTP one.
 
 **First response** — same surfaces as the error-rate section: vmui for the
 p99 series (compare primary vs canary pods via `service_instance_id` in an

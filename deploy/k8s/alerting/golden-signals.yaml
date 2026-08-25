@@ -72,9 +72,13 @@ spec:
         # deploys at deploy time; this alert catches sustained degradation
         # of whatever is serving production without paging on canary-shift
         # noise or one-off slow downloads.
+        #
+        # SSE route excluded: otelgin records duration until stream close,
+        # so each generation lands one ~10s sample that IS the p99 here —
+        # confirmed live, see docs/k8s/alerting.md#gateway-p99-latency.
         - alert: GatewayLatencyP99High
           expr: |
-            histogram_quantile(0.99, sum by (le)(rate(http_server_request_duration_seconds_bucket{service_name="gateway"}[15m]))) > 1.5
+            histogram_quantile(0.99, sum by (le)(rate(http_server_request_duration_seconds_bucket{service_name="gateway",http_route!="/jobs/:id/events"}[15m]))) > 1.5
           for: 15m
           labels:
             severity: warning
