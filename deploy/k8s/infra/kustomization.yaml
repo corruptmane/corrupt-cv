@@ -10,5 +10,6 @@ resources:
   - nats.yaml
   - valkey.yaml
   - fleet-inputs.yaml
+  - cilium-policies.yaml
   # Policies land last so every workload they select already exists in the
   # same apply set (audit mode makes order non-enforcing, but the read

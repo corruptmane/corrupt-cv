@@ -19,7 +19,7 @@ spec:
       # Bump the nonce to force a canary run without a functional change
       # (e.g. to clear a stale Failed status).
       annotations:
-        cvgen.dev/rollout-nonce: "9"
+        cvgen.dev/rollout-nonce: "11"
     spec:
       containers:
         - name: gateway
