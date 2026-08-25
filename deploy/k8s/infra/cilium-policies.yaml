@@ -51,36 +51,6 @@
 # -----------------------------------------------------------------------------
 
 ---
-# 2. DNS — every cvgen pod may resolve via kube-dns (CoreDNS in kube-system).
-#    Both UDP and TCP: UDP for lookups, TCP for truncated responses and zone
-#    transfers — omitting the TCP leg makes resolvers hang to timeout on the
-#    occasional truncated reply. Cross-namespace target, hence the k8s:
-#    source prefixes. Per-workload egress policies below repeat this stanza
-#    deliberately: CNP allows are additive, so the duplication costs nothing
-#    and keeps each workload's contract self-contained if this document's
-#    selector is ever narrowed.
-# -----------------------------------------------------------------------------
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: cvgen-allow-dns-egress
-  namespace: cvgen
-spec:
-  description: allow DNS resolution via kube-dns for all cvgen pods
-  endpointSelector: {}
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s:k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-
----
 # 3. PUBLIC ENTRY — host-network envoy terminates the Gateway API listener,
 #    so requests reach gateway pods from the HOST entity, not from pod IPs.
 #    This is the exact path incident 0011 got wrong: vanilla NP could not
@@ -107,10 +77,7 @@ spec:
   ingress:
     # No `from` restriction: the Gateway is the public entry point — it must
     # accept traffic from host-network envoy (external), internal pods
-    # (loadtester, synthetic probe), and world alike. Restricting to
-    # fromEntities:[host] blocks ALL internal pod traffic because envoy
-    # RBAC enforces CNP ingress regardless of policy-audit-mode (verified:
-    # loadtester got 403 "Access denied" while audit was active).
+    # (loadtester, synthetic probe), and world alike.
     - toPorts:
         - ports:
             - port: "8080"
