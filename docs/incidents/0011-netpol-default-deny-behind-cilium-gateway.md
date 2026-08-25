@@ -38,14 +38,16 @@ backup window. Public traffic 503'd through the envoy listener.
    the same contract, and that infrastructure pods (the database!) are
    clients too — its backup/WAL-archive egress is part of the dependency
    graph.
-2. **Enforcement point changes the semantics.** For traffic entering
-   through a Cilium Gateway API listener, the backend pods' ingress
-   policies are evaluated *inside envoy as an RBAC filter*, where the
-   blanket deny-all entry shadows narrower port-scoped allows — unlike
-   direct pod-IP paths, which use plain eBPF L3/L4 union semantics.
-   Vanilla NetworkPolicy cannot express "allow this properly behind the
-   listener"; the correct tool is a CiliumNetworkPolicy using
-   `fromEntities` for the host-network envoy path.
+2. ~~Enforcement point changes the semantics.~~ **CORRECTED in
+   [0016](0016-gateway-l7lb-enforces-client-egress-against-backends.md):**
+   this report originally blamed "envoy RBAC shadowing allows at the
+   listener" and prescribed `fromEntities` for the host-network envoy.
+   The real mechanism is different: the Gateway listener's
+   `enforce_policy_on_l7lb` filter evaluates the *original client* against
+   the *real backend*, so client-side rules aimed at entities ("host:80",
+   "world:443") pass TCP to the VIP and then die at the backend check as
+   envoy-generated `403 Access denied`. The 403s observed here were that
+   mechanism, not ingress-RBAC shadowing.
 
 **Fix.**
 - Immediate: reverted the whole NetworkPolicy commit set (service
@@ -66,8 +68,10 @@ backup window. Public traffic 503'd through the envoy listener.
    entries in the dependency graph.
 2. With Cilium, the enforcement point depends on the traffic path —
    direct-to-pod flows follow classic union semantics, but anything
-   entering through a Gateway listener is judged by envoy RBAC where an
-   explicit deny shadows allows. Test policies against the *live*
+   entering through a Gateway listener is judged at the l7lb enforcement
+   point against the real backend (see
+   [0016](0016-gateway-l7lb-enforces-client-egress-against-backends.md)
+   for the corrected mechanism). Test policies against the *live*
    cluster through the real entry path before letting default-deny land;
    have the revert ready (here: a single git revert restored service in
    one reconcile).

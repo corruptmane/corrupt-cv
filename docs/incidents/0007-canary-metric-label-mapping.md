@@ -20,3 +20,10 @@ between primary and canary pods rides
 
 **Lesson.** Metric-gated deploys deserve a pre-flight: run the exact gate
 query against the exact datastore before trusting it with rollbacks.
+
+**Postscript.** The identical `no values found` halt returned months
+later with a completely different cause — every loadtester request was
+denied at the Gateway listener before reaching any backend, so no series
+existed to query. See
+[0016](0016-gateway-l7lb-enforces-client-egress-against-backends.md):
+same symptom, opposite end of the path.

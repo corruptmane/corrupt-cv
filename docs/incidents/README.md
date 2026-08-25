@@ -37,6 +37,8 @@ named `NNNN-kebab-case-title.md`. Sections use bold labels, in this order
 | [0013](0013-non-compiling-main-under-incident-pressure.md) | A non-compiling main pushed under incident pressure |
 | [0014](0014-hubble-cli-relay-version-skew.md) | Hubble CLI rejected by the cluster's own relay ("invalid fieldmask") |
 | [0015](0015-renovate-repository-slug-mismatch.md) | Renovate configured against the wrong repository slug |
+| [0016](0016-gateway-l7lb-enforces-client-egress-against-backends.md) | Gateway l7lb enforced each client's egress against the real backend (canary zero-traffic, probe 403s) |
+| [0017](0017-cnpg-control-plane-severed-froze-flux.md) | CNP gaps severed CNPG's control plane and froze Flux reconciliation |
 
 ## Meta-observations
 
@@ -54,8 +56,9 @@ named `NNNN-kebab-case-title.md`. Sections use bold labels, in this order
   (podMonitor), scraper-vs-app label ownership (honor_labels),
   CI-vs-automation feedback (image loop), apply-ordering-vs-analysis-
   timing (revert race), client-vs-server policy direction (NetworkPolicy),
-  policy-enforcement-point-vs-listener (envoy shadowing), IAM-vs-API
-  error masking (S3 probes). Platform engineering is mostly seam
+  client-egress-vs-l7lb-backend enforcement ([0016](0016-gateway-l7lb-enforces-client-egress-against-backends.md)),
+  app-policy-vs-control-plane ([0017](0017-cnpg-control-plane-severed-froze-flux.md)),
+  IAM-vs-API error masking (S3 probes). Platform engineering is mostly seam
   engineering.
 - **Unexplained, parked:** the homelab vmsingle stores one counter as
   `cvgen_jobs_seconds_total` (bogus `seconds` suffix from the
