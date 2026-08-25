@@ -33,3 +33,22 @@ pods.
 client's minor version to the server's, and treat long-lived
 port-forwards as stateful resources that need an explicit stop path —
 a dead tunnel looks exactly like a broken service from the client side.
+
+## Resolution addendum (same night)
+
+The resets had a second, independent layer: the long-lived relay pod
+(28d uptime) was rotated mid-debugging, and its Kubernetes **endpoints
+kept routing new port-forwards to the closing sandbox** — every fresh
+forward bound successfully but reset on first use (`network namespace
+for sandbox ... is closed`). Both access paths verified healthy after
+rotation settled:
+
+- svc path: `kubectl -n kube-system port-forward svc/hubble-relay 4245:80`
+- pod-targeted fallback (bypasses endpoint selection):
+  forward `pod/<relay-pod> 4245:4245`
+
+`just hubble-stop` remains the pre-flight if a forward binds but behaves
+dead. Also confirmed for the record: the relay's gRPC port answers
+nothing to browsers by design — HTTP clients get an empty reply/reset;
+only a gRPC consumer (pinned CLI) can talk to it. The web surface is
+exclusively `hubble-ui`.
