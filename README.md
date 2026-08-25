@@ -15,7 +15,7 @@ flowchart LR
     A -->|GETDEL api key| V
     A -->|publish structured| N
     N -->|structured| R[cv-generator<br/>Python / Typst]
-    R -->|PDF cvs/&#123;job_id&#125;.pdf| S3[(Swift s3api<br/>bucket cvs)]
+    R -->|"PDF cvs/{job_id}.pdf"| S3[(Swift s3api<br/>bucket cvs)]
     R -->|publish rendered| N
     N -->|all events| G
     G -->|job history| PG[(Postgres)]
