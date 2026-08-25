@@ -49,19 +49,6 @@
 #    "ingress: []" IS the default-deny form. A flow not covered below dies
 #    here (audit-logged until Stage 2 flips enforcement on).
 # -----------------------------------------------------------------------------
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: cvgen-default-deny
-  namespace: cvgen
-spec:
-  description: default-deny all ingress and egress for every cvgen pod
-  endpointSelector: {}
-  enableDefaultDeny:
-    ingress: true
-    egress: true
-  ingress: []
-  egress: []
 
 ---
 # 2. DNS — every cvgen pod may resolve via kube-dns (CoreDNS in kube-system).
