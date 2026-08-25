@@ -336,10 +336,12 @@ spec:
 
 ---
 # 9. SYNTHETIC PROBE EGRESS — the blackbox CronJob probes
-#    https://cv.corruptmane.xyz from inside the namespace: DNS + world
-#    HTTPS only. Probe traffic re-enters through the public listener, i.e.
-#    through policy 3's host-entity rule — no pod-to-pod shortcut exists
-#    and none should.
+#    https://cv.corruptmane.xyz from inside the namespace. Public DNS points
+#    that name straight at the Gateway VIP (no CDN in between), so the flow
+#    re-enters through the public listener — where enforce_policy_on_l7lb
+#    authorizes the probe against the REAL backend, gateway pods :8080.
+#    World:443 alone passes TCP and then 403s at that check; the backend
+#    allowance below is what makes the probe work.
 # -----------------------------------------------------------------------------
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -347,7 +349,7 @@ metadata:
   name: cvgen-synthetic-egress
   namespace: cvgen
 spec:
-  description: synthetic probe reaches DNS and the public HTTPS target only
+  description: synthetic probe reaches DNS, world HTTPS, and the gateway pods
   endpointSelector:
     matchLabels:
       app: cvgen-synthetic
@@ -361,6 +363,15 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:app: gateway
+        - matchLabels:
+            k8s:app: gateway-primary
+      toPorts:
+        - ports:
+            - port: "8080"
               protocol: TCP
     - toEntities:
         - world
@@ -528,11 +539,13 @@ spec:
               protocol: TCP
 
 ---
-# 15. LOADTESTER EGRESS — the load tester targets the cilium-gateway VIP,
-#     which is served by the HOST-network envoy, so its destination is the
-#     host entity on the VIP service port 80 (not a pod IP — selecting the
-#     gateway pods directly would miss the listener path entirely). Plus
-#     DNS to resolve the target hostname.
+# 15. LOADTESTER EGRESS — the tester targets the Gateway VIP, but with
+#     enforce_policy_on_l7lb the listener's envoy authorizes the ORIGINAL
+#     client against the REAL backend (gateway pods :8080), not the VIP.
+#     An entity-based rule for host:80 passes the TCP handshake and then
+#     dies at that check — every request 403s and Flagger sees zero traffic
+#     ("no values found" rollbacks). Select the gateway pods explicitly.
+#     Plus DNS to resolve the target hostname.
 # -----------------------------------------------------------------------------
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -540,16 +553,19 @@ metadata:
   name: cvgen-loadtester-egress
   namespace: cvgen
 spec:
-  description: loadtester reaches the host-network gateway VIP and DNS only
+  description: loadtester reaches the gateway pods through the VIP, plus DNS
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: loadtester
   egress:
-    - toEntities:
-        - host
+    - toEndpoints:
+        - matchLabels:
+            k8s:app: gateway
+        - matchLabels:
+            k8s:app: gateway-primary
       toPorts:
         - ports:
-            - port: "80"
+            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
