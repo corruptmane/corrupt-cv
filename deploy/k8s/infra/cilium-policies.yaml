@@ -118,9 +118,13 @@ spec:
           - gateway
           - gateway-primary # Flagger relabels the promoted primary
   ingress:
-    - fromEntities:
-        - host
-      toPorts:
+    # No `from` restriction: the Gateway is the public entry point — it must
+    # accept traffic from host-network envoy (external), internal pods
+    # (loadtester, synthetic probe), and world alike. Restricting to
+    # fromEntities:[host] blocks ALL internal pod traffic because envoy
+    # RBAC enforces CNP ingress regardless of policy-audit-mode (verified:
+    # loadtester got 403 "Access denied" while audit was active).
+    - toPorts:
         - ports:
             - port: "8080"
               protocol: TCP
