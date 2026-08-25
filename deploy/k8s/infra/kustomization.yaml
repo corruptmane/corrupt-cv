@@ -12,5 +12,3 @@ resources:
   - fleet-inputs.yaml
   # Policies land last so every workload they select already exists in the
   # same apply set (audit mode makes order non-enforcing, but the read
-  # order matches the dependency story — see cilium-policies.yaml header).
-  - cilium-policies.yaml
