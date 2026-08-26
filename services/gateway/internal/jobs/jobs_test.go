@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
-	oteltrace "go.opentelemetry.io/otel/trace"
+	otelnoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/corruptmane/corrupt-cv/services/gateway/internal/telemetry"
 )
@@ -62,7 +62,7 @@ func TestRecordTerminalRecordsStatusAndDuration(t *testing.T) {
 	meter := mp.Meter(telemetry.ScopeName)
 
 	r := &Runner{
-		tracer: oteltrace.NewNoopTracerProvider().Tracer("test"),
+		tracer: otelnoop.NewTracerProvider().Tracer("test"),
 		jobsTotal: telemetry.Int64Counter(meter, "cvgen.jobs.total",
 			metric.WithDescription("Jobs that reached a terminal status.")),
 		jobDuration: telemetry.Float64Histogram(meter, "cvgen.job.duration", metric.WithUnit("s")),
