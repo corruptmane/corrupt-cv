@@ -16,21 +16,21 @@ proto-breaking:
 
 # Start the core stack
 up:
-    {{compose}} up -d --build
+    {{ compose }} up -d --build
 
 # Start the core stack + observability profile (enables OTel export in services)
 up-obs:
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 {{compose}} --profile observability up -d --build
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 {{ compose }} --profile observability up -d --build
 
 down:
-    {{compose}} --profile observability down -v
+    {{ compose }} --profile observability down -v
 
 logs *args:
-    {{compose}} logs -f {{args}}
+    {{ compose }} logs -f {{ args }}
 
 # Run goose migrations against the compose postgres
 migrate:
-    {{compose}} run --rm migrate
+    {{ compose }} run --rm migrate
 
 lint:
     buf lint
@@ -38,6 +38,7 @@ lint:
     uv run ruff format --check .
     uv run ty check
     cd services/gateway && go vet ./...
+    cd services/gateway && golangci-lint run
 
 fmt:
     uv run ruff format .
@@ -66,7 +67,7 @@ run-render:
 
 # Hubble access (Cilium). Each surface needs exactly one forward:
 #   just hubble-relay-fwd  -> gRPC for the CLI (:4245)
-#   just hubble-ui-fwd     -> full UI incl. GraphQL proxy (http://127.0.0.1:12000)
+# just hubble-ui-fwd     -> full UI incl. GraphQL proxy (http://127.0.0.1:12000)
 hubble-relay-fwd:
     kubectl -n kube-system port-forward svc/hubble-relay 4245:80
 
@@ -85,4 +86,4 @@ hubble-stop:
 hubble-drops *args:
     #!/usr/bin/env sh
     if command -v hubble-1.18 >/dev/null 2>&1; then BIN=hubble-1.18; else BIN=hubble; fi
-    exec "$BIN" observe --server 127.0.0.1:4245 --namespace cvgen --verdict DROPPED "{{args}}"
+    exec "$BIN" observe --server 127.0.0.1:4245 --namespace cvgen --verdict DROPPED "{{ args }}"
