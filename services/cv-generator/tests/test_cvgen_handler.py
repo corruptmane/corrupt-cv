@@ -10,9 +10,16 @@ from io import BytesIO
 from pathlib import Path
 from typing import cast
 
+import cv_generator.handler as handler_module
 import pytest
 import typst
-from cv_generator.handler import INVALID_INPUT_ERROR, PAGE_LIMIT_ERROR, RENDER_ERROR, JobHandler
+from cv_generator.handler import (
+    INVALID_INPUT_ERROR,
+    PAGE_LIMIT_ERROR,
+    REASON_PAGE_LIMIT,
+    RENDER_ERROR,
+    JobHandler,
+)
 from cv_shared.consumer import TerminalError
 from cvgen.cv.v1 import cv_pb2
 from cvgen.events.v1 import events_pb2
@@ -21,6 +28,22 @@ from natsio.jetstream.context import JetStreamContext
 from pypdf import PdfReader
 
 JOB_ID = "7a1e5d70-9c2b-4f4e-8a3d-2b1c0d9e8f7a"
+
+
+class FakeCounter:
+    def __init__(self) -> None:
+        self.adds: list[tuple[int, dict[str, object]]] = []
+
+    def add(self, amount: int, attributes: dict[str, object] | None = None) -> None:
+        self.adds.append((amount, attributes or {}))
+
+
+class FakeHistogram:
+    def __init__(self) -> None:
+        self.records: list[tuple[float, dict[str, object]]] = []
+
+    def record(self, amount: float, attributes: dict[str, object] | None = None) -> None:
+        self.records.append((amount, attributes or {}))
 
 
 @cache
@@ -161,6 +184,22 @@ async def test_success_uploads_pdf_and_publishes_job_rendered() -> None:
     assert rendered.HasField("occurred_at")
 
 
+async def test_success_records_render_and_storage_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    compiles, pages, put_bytes, failures = FakeCounter(), FakeHistogram(), FakeHistogram(), FakeCounter()
+    monkeypatch.setattr(handler_module, "render_compiles", compiles)
+    monkeypatch.setattr(handler_module, "render_pages", pages)
+    monkeypatch.setattr(handler_module, "storage_put_bytes", put_bytes)
+    monkeypatch.setattr(handler_module, "rendering_failures", failures)
+
+    await _handler(FakeJetStream(), FakeRenderer(), FakeStorage())(_structured_msg())
+
+    assert compiles.adds == [(1, {"outcome": "ok"})]
+    assert [amount for amount, _attrs in pages.records] == [1]  # single-page PDF
+    assert len(put_bytes.records) == 1
+    assert put_bytes.records[0][0] > 0
+    assert failures.adds == []
+
+
 async def test_render_runs_off_the_event_loop_thread() -> None:
     # F13/W8: the sync typst compile must not occupy the event-loop thread.
     js = FakeJetStream()
@@ -192,8 +231,12 @@ async def test_typst_error_is_terminal_and_publishes_job_failed() -> None:
     assert failed.error == RENDER_ERROR
 
 
-async def test_oversized_render_fails_with_page_limit() -> None:
+async def test_oversized_render_fails_with_page_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     # W9: a rendered CV over two pages is terminal — and must never reach storage.
+    compiles, pages, failures = FakeCounter(), FakeHistogram(), FakeCounter()
+    monkeypatch.setattr(handler_module, "render_compiles", compiles)
+    monkeypatch.setattr(handler_module, "render_pages", pages)
+    monkeypatch.setattr(handler_module, "rendering_failures", failures)
     js = FakeJetStream()
     renderer = FakeRenderer(pdf=_typst_pdf(3))
     storage = FakeStorage()
@@ -205,6 +248,10 @@ async def test_oversized_render_fails_with_page_limit() -> None:
     failed = _published_failure(js)
     assert failed.stage == events_pb2.JOB_STAGE_RENDERING
     assert failed.error == PAGE_LIMIT_ERROR
+    # The doomed render still shows up in the page histogram before the limit fires.
+    assert [amount for amount, _attrs in pages.records] == [3]
+    assert compiles.adds == [(1, {"outcome": "ok"})]
+    assert failures.adds == [(1, {"reason": REASON_PAGE_LIMIT})]
 
 
 async def test_two_page_render_passes() -> None:
