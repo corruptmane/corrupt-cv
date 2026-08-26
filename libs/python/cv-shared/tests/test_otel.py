@@ -3,18 +3,21 @@
 import asyncio
 from typing import Any, cast
 
+import cv_shared.consumer as consumer_module
+import cv_shared.natsx as natsx
 import pytest
 import structlog
 from cv_shared import logging as cv_logging
 from cv_shared import otel
 from cv_shared.consumer import TerminalError, run_pull_loop
-from cv_shared.natsx import publish_event
+from cv_shared.natsx import publish_event, publish_with_retry
 from natsio.jetstream import Consumer
 from natsio.jetstream.context import JetStreamContext
 from opentelemetry import trace
 from opentelemetry._logs import SeverityNumber
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -23,12 +26,49 @@ from opentelemetry.trace import SpanKind, StatusCode
 JOB_ID = "7a1e5d70-9c2b-4f4e-8a3d-2b1c0d9e8f7a"
 
 
+class FakeCounter:
+    def __init__(self) -> None:
+        self.adds: list[tuple[int, dict[str, object]]] = []
+
+    def add(self, amount: int, attributes: dict[str, object] | None = None) -> None:
+        self.adds.append((amount, attributes or {}))
+
+
+class FakeHistogram:
+    def __init__(self) -> None:
+        self.records: list[tuple[float, dict[str, object]]] = []
+
+    def record(self, amount: float, attributes: dict[str, object] | None = None) -> None:
+        self.records.append((amount, attributes or {}))
+
+
+class FakeMetricExporter:
+    """Stands in for OTLPMetricExporter so setup-built meters never hit the network."""
+
+    # The periodic reader defers to these; None keeps the SDK defaults.
+    _preferred_temporality = None
+    _preferred_aggregation = None
+
+    def export(self, *args: Any, **kwargs: Any) -> Any:
+        from opentelemetry.sdk.metrics.export import MetricExportResult
+
+        return MetricExportResult.SUCCESS
+
+    def shutdown(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+    def force_flush(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+
 @pytest.fixture(autouse=True)
 def _fresh_otel_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(otel, "_configured", False)
     monkeypatch.setattr(otel, "_tracer_provider", None)
     monkeypatch.setattr(otel, "_logger_provider", None)
+    monkeypatch.setattr(otel, "_meter_provider", None)
     monkeypatch.setattr(cv_logging, "_otel_logger_cache", None)
+    monkeypatch.setattr(otel, "OTLPMetricExporter", FakeMetricExporter)  # no endpoint probes
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
     monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
@@ -70,18 +110,23 @@ def test_setup_otel_with_endpoint_configures_and_is_idempotent(monkeypatch: pyte
     monkeypatch.setattr(otel.trace, "set_tracer_provider", set_providers.append)
     set_log_providers: list[LoggerProvider] = []
     monkeypatch.setattr(otel, "set_logger_provider", set_log_providers.append)
+    set_meter_providers: list[MeterProvider] = []
+    monkeypatch.setattr(otel, "set_meter_provider", set_meter_providers.append)
 
     otel.setup_otel("arg-name")
     otel.setup_otel("arg-name")  # idempotent: no second provider
 
     assert len(set_providers) == 1
     assert len(set_log_providers) == 1
+    assert len(set_meter_providers) == 1
     assert otel.active_logger_provider() is set_log_providers[0]
+    assert otel._meter_provider is set_meter_providers[0]
     # OTEL_SERVICE_NAME wins over the argument.
     assert set_providers[0].resource.attributes["service.name"] == "env-name"
     assert set_log_providers[0].resource.attributes["service.name"] == "env-name"
     set_providers[0].shutdown()
     set_log_providers[0].shutdown()
+    set_meter_providers[0].shutdown()
 
 
 def test_setup_otel_failure_leaves_gate_open_for_retry(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,25 +159,31 @@ def test_shutdown_without_setup_is_safe() -> None:
     assert otel.active_logger_provider() is None
 
 
-def test_shutdown_shuts_down_both_providers_and_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shutdown_shuts_down_all_three_providers_and_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
     set_providers: list[TracerProvider] = []
     monkeypatch.setattr(otel.trace, "set_tracer_provider", set_providers.append)
     set_log_providers: list[LoggerProvider] = []
     monkeypatch.setattr(otel, "set_logger_provider", set_log_providers.append)
+    set_meter_providers: list[MeterProvider] = []
+    monkeypatch.setattr(otel, "set_meter_provider", set_meter_providers.append)
     otel.setup_otel("svc")
 
     tracer_down: list[int] = []
     log_down: list[int] = []
+    meter_down: list[int] = []
     monkeypatch.setattr(set_providers[0], "shutdown", lambda: tracer_down.append(1))
     monkeypatch.setattr(set_log_providers[0], "shutdown", lambda: log_down.append(1))
+    monkeypatch.setattr(set_meter_providers[0], "shutdown", lambda: meter_down.append(1))
 
     otel.shutdown()
     otel.shutdown()
 
     assert tracer_down == [1]
     assert log_down == [1]
+    assert meter_down == [1]  # the periodic metric reader flushes on shutdown
     assert otel.active_logger_provider() is None
+    assert otel._meter_provider is None
     assert otel._configured is False
 
 
@@ -234,7 +285,12 @@ async def _run_loop(msg: FakeMsg, handler: Any) -> None:
         await run_pull_loop(consumer, handler, service="test-service", fetch_timeout_s=0.01)
 
 
-async def test_consume_span_kind_and_attributes(span_exporter: InMemorySpanExporter) -> None:
+async def test_consume_span_kind_and_attributes(
+    span_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    consumed, handle = FakeCounter(), FakeHistogram()
+    monkeypatch.setattr(consumer_module, "_consumed_total", consumed)
+    monkeypatch.setattr(consumer_module, "_handle_duration", handle)
     msg = FakeMsg(f"cv.{JOB_ID}.requested")
 
     async def handler(_msg: Any) -> None:
@@ -253,9 +309,16 @@ async def test_consume_span_kind_and_attributes(span_exporter: InMemorySpanExpor
         "cvgen.event": "requested",
     }
     assert span.status.status_code == StatusCode.UNSET
+    assert consumed.adds == [(1, {"event": "requested", "outcome": "ack"})]
+    assert len(handle.records) == 1
+    assert handle.records[0][1] == {"event": "requested"}
 
 
-async def test_consume_span_records_terminal_error(span_exporter: InMemorySpanExporter) -> None:
+async def test_consume_span_records_terminal_error(
+    span_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    consumed = FakeCounter()
+    monkeypatch.setattr(consumer_module, "_consumed_total", consumed)
     msg = FakeMsg(f"cv.{JOB_ID}.requested")
 
     async def handler(_msg: Any) -> None:
@@ -268,9 +331,14 @@ async def test_consume_span_records_terminal_error(span_exporter: InMemorySpanEx
     assert span.status.status_code == StatusCode.ERROR
     assert span.status.description == "bad model output"
     assert [e.name for e in span.events] == ["exception"]
+    assert consumed.adds == [(1, {"event": "requested", "outcome": "term"})]
 
 
-async def test_consume_span_records_nak_error(span_exporter: InMemorySpanExporter) -> None:
+async def test_consume_span_records_nak_error(
+    span_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    consumed = FakeCounter()
+    monkeypatch.setattr(consumer_module, "_consumed_total", consumed)
     msg = FakeMsg(f"cv.{JOB_ID}.requested")
 
     async def handler(_msg: Any) -> None:
@@ -282,9 +350,14 @@ async def test_consume_span_records_nak_error(span_exporter: InMemorySpanExporte
     (span,) = span_exporter.get_finished_spans()
     assert span.status.status_code == StatusCode.ERROR
     assert [e.name for e in span.events] == ["exception"]
+    assert consumed.adds == [(1, {"event": "requested", "outcome": "nak"})]
 
 
-async def test_publish_event_producer_span_parents_injected_context(span_exporter: InMemorySpanExporter) -> None:
+async def test_publish_event_producer_span_parents_injected_context(
+    span_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published_total = FakeCounter()
+    monkeypatch.setattr(natsx, "_published_total", published_total)
     published: list[tuple[str, bytes, dict[str, str], str | None]] = []
 
     class FakeJetStream:
@@ -313,7 +386,44 @@ async def test_publish_event_producer_span_parents_injected_context(span_exporte
     assert subject == f"cv.{JOB_ID}.structured"
     assert payload == b"payload"
     assert msg_id == f"{JOB_ID}:structured"
+    assert published_total.adds == [(1, {"event": "structured", "outcome": "ok"})]
     # inject happened inside the span: downstream consumers parent onto the producer span
     ctx = span.get_span_context()
     assert ctx is not None
     assert headers["traceparent"].startswith(f"00-{ctx.trace_id:032x}-{ctx.span_id:016x}-")
+
+
+async def test_publish_with_retry_counts_retry_then_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transient blip counts one error attempt, one retry, then the ok publish."""
+    published_total, retries = FakeCounter(), FakeCounter()
+    monkeypatch.setattr(natsx, "_published_total", published_total)
+    monkeypatch.setattr(natsx, "_publish_retries_total", retries)
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float, result: object = None) -> object:
+        sleeps.append(delay)
+        return result
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    class FlakyJetStream:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def publish(self, subject: str, payload: bytes, *, headers=None, msg_id=None) -> None:
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("nats blip")
+
+    js = FlakyJetStream()
+    await publish_with_retry(
+        cast(JetStreamContext, js), JOB_ID, "structured", b"payload", service="svc", delays_s=(0.0,)
+    )
+
+    assert js.calls == 2
+    assert sleeps == [0.0]
+    assert retries.adds == [(1, {"event": "structured"})]
+    assert published_total.adds == [
+        (1, {"event": "structured", "outcome": "error"}),
+        (1, {"event": "structured", "outcome": "ok"}),
+    ]

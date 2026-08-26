@@ -17,6 +17,7 @@ from natsio.jetstream.context import JetStreamContext
 from natsio.kv import BucketNotFoundError, KeyValue
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
+from opentelemetry.metrics import get_meter
 from opentelemetry.trace import SpanKind
 
 STREAM = "CV_EVENTS"
@@ -36,6 +37,16 @@ _BIND_MAX_ATTEMPTS = 90
 _PUBLISH_RETRY_DELAYS_S: tuple[float, ...] = (1.0, 3.0)
 
 log = structlog.get_logger("cv_shared.natsx")
+
+_publish_meter = get_meter("cv_shared.natsx")
+_published_total = _publish_meter.create_counter(
+    "cvgen.messages.published.total",
+    description="Job event publish attempts to JetStream, by outcome.",
+)
+_publish_retries_total = _publish_meter.create_counter(
+    "cvgen.messages.publish.retries.total",
+    description="Transient publish retries within one delivery budget.",
+)
 
 
 def event_subject(job_id: str, event: str) -> str:
@@ -103,7 +114,12 @@ async def publish_event(
     ):
         # Inject inside the span so the consumer's extracted parent is this producer span.
         headers = inject_trace_headers()
-        await js.publish(subject, payload, msg_id=f"{job_id}:{event}", headers=headers or None)
+        try:
+            await js.publish(subject, payload, msg_id=f"{job_id}:{event}", headers=headers or None)
+        except Exception:
+            _published_total.add(1, {"event": event, "outcome": "error"})
+            raise
+        _published_total.add(1, {"event": event, "outcome": "ok"})
 
 
 async def publish_with_retry(
@@ -146,5 +162,6 @@ async def publish_with_retry(
                 attempt=attempt,
                 error=str(exc),
             )
+            _publish_retries_total.add(1, {"event": event})
             await asyncio.sleep(delays_s[attempt])
     raise AssertionError("unreachable")  # pragma: no cover

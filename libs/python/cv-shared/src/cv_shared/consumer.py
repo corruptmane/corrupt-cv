@@ -1,16 +1,29 @@
 """Generic pull-consume loop with ack-deadline heartbeats and trace propagation."""
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 
 import structlog
 from natsio.jetstream import Consumer, JsMsg
 from opentelemetry import trace
+from opentelemetry.metrics import get_meter
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from cv_shared.natsx import extract_trace_context, job_id_from_subject
 
 Handler = Callable[[JsMsg], Awaitable[None]]
+
+_meter = get_meter("cv_shared.consumer")
+_consumed_total = _meter.create_counter(
+    "cvgen.messages.consumed.total",
+    description="Messages pulled from JetStream, by terminal dispatch outcome.",
+)
+_handle_duration = _meter.create_histogram(
+    "cvgen.messages.handle.duration",
+    unit="s",
+    description="Handler wall time per message, including the ack/term/nak round trip.",
+)
 
 
 class TerminalError(Exception):
@@ -59,6 +72,7 @@ async def run_pull_loop(
             continue
         for msg in msgs:
             ctx = extract_trace_context(msg.headers)
+            event = msg.subject.rsplit(".", 1)[-1]
             with tracer.start_as_current_span(
                 f"consume {msg.subject}",
                 context=ctx,
@@ -67,10 +81,11 @@ async def run_pull_loop(
                     "messaging.system": "nats",
                     "messaging.destination.name": msg.subject,
                     "cvgen.job_id": job_id_from_subject(msg.subject),
-                    "cvgen.event": msg.subject.rsplit(".", 1)[-1],
+                    "cvgen.event": event,
                 },
             ) as span:
                 heartbeat = asyncio.create_task(_heartbeat(msg, heartbeat_s))
+                started = time.perf_counter()
                 try:
                     await handler(msg)
                 except TerminalError as exc:
@@ -78,16 +93,23 @@ async def run_pull_loop(
                     span.set_status(Status(StatusCode.ERROR, str(exc)))
                     log.warning("terminal failure", subject=msg.subject, error=str(exc))
                     await msg.term(str(exc))
+                    outcome = "term"
                 except Exception as exc:
                     span.record_exception(exc)
                     span.set_status(Status(StatusCode.ERROR, str(exc)))
                     log.exception("handler failed, nak for redelivery", subject=msg.subject)
                     await msg.nak(delay=nak_delay_s)
+                    outcome = "nak"
                 else:
                     # Residual window: an external cancel landing between handler
                     # return and this ack abandons the message un-acked (it will
                     # be redelivered); accepted at a 90s drain budget rather than
                     # shielding the ack.
                     await msg.ack()
+                    outcome = "ack"
                 finally:
                     heartbeat.cancel()
+                # Reached only when a terminal action completed without raising;
+                # a failed ack/term/nak propagates uncounted like before.
+                _handle_duration.record(time.perf_counter() - started, {"event": event})
+                _consumed_total.add(1, {"event": event, "outcome": outcome})
