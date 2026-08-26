@@ -60,9 +60,13 @@ type Runner struct {
 	st   *store.Store
 	log  *slog.Logger
 
-	tracer      oteltrace.Tracer
-	jobsTotal   metric.Int64Counter
-	jobDuration metric.Float64Histogram
+	tracer        oteltrace.Tracer
+	jobsTotal     metric.Int64Counter
+	jobDuration   metric.Float64Histogram
+	jobsSwept     metric.Int64Counter
+	jobsPoisoned  metric.Int64Counter
+	consPending   metric.Int64Gauge
+	consAckPending metric.Int64Gauge
 
 	consumeCtx natsjs.ConsumeContext
 	advisory   *nats.Subscription
@@ -74,25 +78,26 @@ type Runner struct {
 // they are the SDK's no-ops.
 func NewRunner(js natsjs.JetStream, st *store.Store, log *slog.Logger) *Runner {
 	meter := otel.Meter(telemetry.ScopeName)
-	jobsTotal, err := meter.Int64Counter("cvgen.jobs.total",
-		metric.WithDescription("Jobs that reached a terminal status."))
-	if err != nil {
-		log.Warn("create cvgen.jobs.total counter", "error", err)
-	}
-	jobDuration, err := meter.Float64Histogram("cvgen.job.duration",
-		metric.WithUnit("s"),
-		metric.WithDescription("Time from job creation to its terminal event."))
-	if err != nil {
-		log.Warn("create cvgen.job.duration histogram", "error", err)
-	}
 	return &Runner{
-		js:          js,
-		conn:        js.Conn(),
-		st:          st,
-		log:         log,
-		tracer:      otel.Tracer(telemetry.ScopeName),
-		jobsTotal:   jobsTotal,
-		jobDuration: jobDuration,
+		js:     js,
+		conn:   js.Conn(),
+		st:     st,
+		log:    log,
+		tracer: otel.Tracer(telemetry.ScopeName),
+		jobsTotal: telemetry.Int64Counter(meter, "cvgen.jobs.total",
+			metric.WithDescription("Jobs that reached a terminal status.")),
+		jobDuration: telemetry.Float64Histogram(meter, "cvgen.job.duration",
+			metric.WithUnit("s"),
+			metric.WithDescription("Time from job creation to its terminal event."),
+			metric.WithExplicitBucketBoundaries(1, 5, 10, 30, 60, 120, 300, 600, 1200, 3600)),
+		jobsSwept: telemetry.Int64Counter(meter, "cvgen.jobs.swept.total",
+			metric.WithDescription("Stuck jobs failed by the sweeper.")),
+		jobsPoisoned: telemetry.Int64Counter(meter, "cvgen.jobs.poisoned.total",
+			metric.WithDescription("Jobs failed after a consumer exhausted its delivery attempts, by event.")),
+		consPending: telemetry.Int64Gauge(meter, "cvgen.consumer.pending",
+			metric.WithDescription("Messages waiting to be delivered, per durable consumer.")),
+		consAckPending: telemetry.Int64Gauge(meter, "cvgen.consumer.ack_pending",
+			metric.WithDescription("Delivered-but-unacked messages, per durable consumer.")),
 	}
 }
 
@@ -295,13 +300,15 @@ func (r *Runner) handleAdvisory(m *nats.Msg) {
 		return
 	}
 	if applied {
+		r.jobsPoisoned.Add(ctx, 1, metric.WithAttributes(attribute.String("event", event)))
 		r.recordTerminal(ctx, "failed", createdAt, nil)
 	}
 	log.Info("job failed after exhausted deliveries", "job_id", jobID, "event", event)
 }
 
 // sweep fails jobs stuck without progress for over 10 minutes, once a
-// minute, until ctx is cancelled.
+// minute, until ctx is cancelled. The same tick refreshes the consumer
+// backlog gauges.
 func (r *Runner) sweep(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -318,8 +325,30 @@ func (r *Runner) sweep(ctx context.Context) {
 				continue
 			}
 			if swept > 0 {
+				r.jobsSwept.Add(ctx, swept)
 				r.log.Info("swept stuck jobs", "count", swept)
 			}
+			r.recordBacklog(ctx)
 		}
+	}
+}
+
+// recordBacklog reports every durable consumer's queue depth. The
+// gateway provisions all three, so one loop here sees the whole
+// pipeline's backlog and the workers stay dumb.
+func (r *Runner) recordBacklog(ctx context.Context) {
+	for _, name := range []string{jetstream.ConsumerGatewayEvt, jetstream.ConsumerAIProc, jetstream.ConsumerCVGen} {
+		cons, err := r.js.Consumer(ctx, jetstream.StreamName, name)
+		if err != nil {
+			r.log.Debug("consumer backlog lookup", "consumer", name, "error", err)
+			continue
+		}
+		info := cons.CachedInfo()
+		if info == nil {
+			continue
+		}
+		attrs := metric.WithAttributes(attribute.String("consumer", name))
+		r.consPending.Record(ctx, int64(info.NumPending), attrs)
+		r.consAckPending.Record(ctx, int64(info.NumAckPending), attrs)
 	}
 }

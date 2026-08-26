@@ -90,6 +90,9 @@ func (s *Server) handleJobEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
+	s.metrics.sseStreams.Add(c.Request.Context(), 1)
+	s.metrics.sseConnections.Add(1)
+	defer s.metrics.sseConnections.Add(-1)
 
 	w := c.Writer
 	h := w.Header()

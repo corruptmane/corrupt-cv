@@ -41,6 +41,7 @@ type Server struct {
 	objects      *s3.Client
 	log          *slog.Logger
 	maxBodyBytes int64
+	metrics      *webMetrics
 
 	tmplIndex  *template.Template
 	tmplJob    *template.Template
@@ -59,6 +60,7 @@ func New(st *store.Store, cat *catalog.Catalog, js natsjs.JetStream, pub *jetstr
 		objects:      objects,
 		log:          log,
 		maxBodyBytes: maxBodyBytes,
+		metrics:      newWebMetrics(log),
 
 		tmplIndex:  template.Must(template.ParseFS(templateFS, "templates/base.html", "templates/index.html")),
 		tmplJob:    template.Must(template.ParseFS(templateFS, "templates/base.html", "templates/job.html")),

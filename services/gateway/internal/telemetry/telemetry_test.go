@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/nats-io/nats.go"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -87,5 +89,39 @@ func TestNATSCarrierLowercaseKeys(t *testing.T) {
 	out := propagation.TraceContext{}.Extract(context.Background(), natsHeaderCarrier(h))
 	if got := trace.SpanContextFromContext(out); got.TraceID() != sc.TraceID() {
 		t.Fatalf("extract round-trip: got trace id %s, want %s", got.TraceID(), sc.TraceID())
+	}
+}
+
+// TestInstrumentHelpersFallBackToNoop: a name the SDK rejects must yield
+// usable no-op instruments — never nil (first-use panic) and never an
+// error that takes the process down. The no-ops also record nothing into
+// the real provider they were requested from.
+func TestInstrumentHelpersFallBackToNoop(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+	meter := mp.Meter("test")
+
+	const bad = "invalid name" // spaces violate the instrument-name spec
+
+	c := Int64Counter(meter, bad)
+	fh := Float64Histogram(meter, bad)
+	ih := Int64Histogram(meter, bad)
+	g := Int64Gauge(meter, bad)
+	if c == nil || fh == nil || ih == nil || g == nil {
+		t.Fatal("a fallback helper returned a nil instrument")
+	}
+
+	ctx := context.Background()
+	c.Add(ctx, 1)
+	fh.Record(ctx, 0.5)
+	ih.Record(ctx, 2)
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(rm.ScopeMetrics) != 0 {
+		t.Fatalf("fallback instruments recorded into the real provider: %+v", rm.ScopeMetrics)
 	}
 }

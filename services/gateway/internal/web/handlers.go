@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -172,6 +174,7 @@ func (s *Server) handleProfileSave(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.metrics.profilesSaved.Add(c.Request.Context(), 1)
 	c.Redirect(http.StatusSeeOther, "/?notice="+url.QueryEscape("Profile saved."))
 }
 
@@ -187,22 +190,22 @@ func (s *Server) handleJobCreate(c *gin.Context) {
 	apiKey := strings.TrimSpace(c.PostForm("api_key"))
 
 	if jobDescription == "" {
-		redirectWithError(c, "Job description must not be empty.")
+		s.rejectJob(c, reasonEmptyDescription, "Job description must not be empty.")
 		return
 	}
 	entry := s.cat.Get(modelKey)
 	if entry == nil {
-		redirectWithError(c, "Please pick a model from the list.")
+		s.rejectJob(c, reasonUnknownModel, "Please pick a model from the list.")
 		return
 	}
 	if entry.GetProvider() != catalogv1.Provider_PROVIDER_FAKE && apiKey == "" {
-		redirectWithError(c, "This model requires your provider API key.")
+		s.rejectJob(c, reasonMissingAPIKey, "This model requires your provider API key.")
 		return
 	}
 
 	profile, err := s.st.GetProfile(ctx, visitor)
 	if errors.Is(err, store.ErrNotFound) {
-		redirectWithError(c, "Save your profile before generating a CV.")
+		s.rejectJob(c, reasonNoProfile, "Save your profile before generating a CV.")
 		return
 	}
 	if err != nil {
@@ -212,14 +215,18 @@ func (s *Server) handleJobCreate(c *gin.Context) {
 	}
 	switch err := validateJobSizes(jobDescription, profile.CareerText); {
 	case errors.Is(err, ErrJobDescriptionTooLong):
+		s.metrics.jobsRejected.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("reason", reasonJobTooLong)))
 		c.String(http.StatusBadRequest, "Job description is too long (limit 20,000 characters). Please shorten it and try again.")
 		return
 	case errors.Is(err, ErrCareerTextTooLong):
+		s.metrics.jobsRejected.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("reason", reasonCareerTooLong)))
 		c.String(http.StatusBadRequest, "Your saved career history is too long (limit 100,000 characters). Please shorten it on the home page and try again.")
 		return
 	}
 	if strings.TrimSpace(profile.CareerText) == "" || len(profile.PersonalInfo) == 0 {
-		redirectWithError(c, "Your profile needs career history and personal details first.")
+		s.rejectJob(c, reasonIncompleteProfile, "Your profile needs career history and personal details first.")
 		return
 	}
 	var personalInfo cvv1.PersonalInfo
@@ -235,6 +242,7 @@ func (s *Server) handleJobCreate(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.metrics.jobsCreated.Add(ctx, 1, metric.WithAttributes(attribute.String("model_key", modelKey)))
 	log := s.log.With("job_id", jobID)
 
 	// The key goes to Valkey BEFORE the event is published so the
@@ -311,9 +319,12 @@ func (s *Server) handleJobDownload(c *gin.Context) {
 		c.Header("Content-Length", strconv.FormatInt(*obj.ContentLength, 10))
 	}
 	c.Status(http.StatusOK)
-	if _, err := io.Copy(c.Writer, obj.Body); err != nil {
+	s.metrics.downloads.Add(c.Request.Context(), 1)
+	written, err := io.Copy(c.Writer, obj.Body)
+	if err != nil {
 		s.log.Warn("stream pdf interrupted", "job_id", job.ID, "error", err)
 	}
+	s.metrics.downloadBytes.Record(c.Request.Context(), written)
 }
 
 // handleJobAPI serves the JSON job state used by e2e polling.
