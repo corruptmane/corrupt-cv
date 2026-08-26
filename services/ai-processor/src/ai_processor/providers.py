@@ -23,6 +23,20 @@ class UnsupportedProviderError(Exception):
     """Catalog entry names a provider this service cannot build a model for."""
 
 
+_PROVIDER_LABELS = {
+    catalog_pb2.PROVIDER_ANTHROPIC: "anthropic",
+    catalog_pb2.PROVIDER_OPENAI: "openai",
+    catalog_pb2.PROVIDER_GOOGLE: "google",
+    catalog_pb2.PROVIDER_OPENROUTER: "openrouter",
+    catalog_pb2.PROVIDER_FAKE: "fake",
+}
+
+
+def provider_label(entry: catalog_pb2.ModelCatalogEntry) -> str:
+    """Low-cardinality metric label form of the entry's provider enum."""
+    return _PROVIDER_LABELS.get(entry.provider, "unknown")
+
+
 def build_model(entry: catalog_pb2.ModelCatalogEntry, api_key: str | None) -> Model:
     if entry.provider == catalog_pb2.PROVIDER_FAKE:
         return build_fake_model()

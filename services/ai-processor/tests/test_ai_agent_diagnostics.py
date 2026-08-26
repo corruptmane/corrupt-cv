@@ -69,6 +69,8 @@ async def _run_failing() -> list[Record]:
             personal_info=_personal_info(),
             career_text=f"Contact: {FIXTURE_NAME}, {FIXTURE_EMAIL}, {FIXTURE_PHONE}.\n{CAREER_TEXT}",
             job_description=JOB_TEXT,
+            provider="fake",
+            model_key="fake/bad-fake-cv",
         )
     return cast(list[Record], list(records))
 
@@ -163,6 +165,8 @@ async def test_verbose_diagnostics_ride_the_debug_gate(monkeypatch: pytest.Monke
             personal_info=_personal_info(),
             career_text=CAREER_TEXT,
             job_description=JOB_TEXT,
+            provider="fake",
+            model_key="fake/bad-fake-cv",
         )
 
     events = [event for _, event in recorder.calls]

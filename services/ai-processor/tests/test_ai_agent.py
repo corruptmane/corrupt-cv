@@ -1,9 +1,27 @@
 """The real Agent run against the fake FunctionModel: valid CV, no network."""
 
+import ai_processor.agent as agent_module
+import pytest
 from ai_processor.agent import generate_cv
 from ai_processor.fake import build_fake_model
 from cv_shared.models import CV
 from cvgen.cv.v1 import cv_pb2
+
+
+class FakeCounter:
+    def __init__(self) -> None:
+        self.adds: list[tuple[int, dict[str, object]]] = []
+
+    def add(self, amount: int, attributes: dict[str, object] | None = None) -> None:
+        self.adds.append((amount, attributes or {}))
+
+
+class FakeHistogram:
+    def __init__(self) -> None:
+        self.records: list[tuple[float, dict[str, object]]] = []
+
+    def record(self, amount: float, attributes: dict[str, object] | None = None) -> None:
+        self.records.append((amount, attributes or {}))
 
 
 def _personal_info() -> cv_pb2.PersonalInfo:
@@ -23,6 +41,8 @@ async def test_fake_model_produces_valid_cv_with_personal_info_override() -> Non
         personal_info=_personal_info(),
         career_text="Six years of backend work.",
         job_description="Platform engineer role.",
+        provider="fake",
+        model_key="fake/canned",
     )
 
     assert isinstance(cv, CV)
@@ -35,6 +55,33 @@ async def test_fake_model_produces_valid_cv_with_personal_info_override() -> Non
     assert cv.summary
     assert cv.experience
     assert cv.skills
+
+
+async def test_generate_cv_records_attempt_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts, durations, tokens = FakeCounter(), FakeHistogram(), FakeCounter()
+    monkeypatch.setattr(agent_module, "llm_attempts", attempts)
+    monkeypatch.setattr(agent_module, "llm_request_duration", durations)
+    monkeypatch.setattr(agent_module, "llm_tokens", tokens)
+
+    cv = await generate_cv(
+        build_fake_model(),
+        personal_info=_personal_info(),
+        career_text="x",
+        job_description="y",
+        provider="fake",
+        model_key="fake/canned",
+    )
+
+    assert isinstance(cv, CV)
+    assert attempts.adds == [(1, {"provider": "fake", "model_key": "fake/canned", "outcome": "ok"})]
+    assert len(durations.records) == 1
+    assert durations.records[0][1] == {"provider": "fake"}
+    # The fake model reports real usage: one increment per direction.
+    assert [attrs for _amount, attrs in tokens.adds] == [
+        {"provider": "fake", "type": "input"},
+        {"provider": "fake", "type": "output"},
+    ]
+    assert all(isinstance(amount, int) and amount > 0 for amount, _attrs in tokens.adds)
 
 
 async def test_output_schema_sent_to_models_excludes_personal_info() -> None:
@@ -59,6 +106,8 @@ async def test_output_schema_sent_to_models_excludes_personal_info() -> None:
             personal_info=_personal_info(),
             career_text="x",
             job_description="y",
+            provider="fake",
+            model_key="fake/spy",
         )
 
     schema = captured["schema"]

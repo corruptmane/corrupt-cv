@@ -12,6 +12,9 @@ from ai_processor.handler import (
     API_KEY_MISSING_ERROR,
     CREDITS_EXHAUSTED_ERROR,
     INVALID_INPUT_ERROR,
+    REASON_API_KEY_MISSING,
+    REASON_CREDITS_EXHAUSTED,
+    REASON_UNKNOWN_MODEL,
     UNKNOWN_MODEL_ERROR,
     JobHandler,
     apikey_key,
@@ -28,6 +31,14 @@ from pydantic_ai.exceptions import ModelHTTPError
 from valkey.asyncio import Valkey
 
 JOB_ID = "0f9b2f6e-6f0f-4a63-9a1c-1c2d3e4f5a6b"
+
+
+class FakeCounter:
+    def __init__(self) -> None:
+        self.adds: list[tuple[int, dict[str, object]]] = []
+
+    def add(self, amount: int, attributes: dict[str, object] | None = None) -> None:
+        self.adds.append((amount, attributes or {}))
 
 
 @dataclass
@@ -134,7 +145,11 @@ def _single_failure(js: FakeJetStream) -> events_pb2.JobFailed:
     return failed
 
 
-async def test_unknown_model_key_is_terminal_and_publishes_job_failed() -> None:
+async def test_unknown_model_key_is_terminal_and_publishes_job_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failures = FakeCounter()
+    monkeypatch.setattr(handler_module, "processing_failures", failures)
     js = FakeJetStream()
     handler = _handler(js, FakeKV({}), FakeValkey({}))
 
@@ -145,9 +160,14 @@ async def test_unknown_model_key_is_terminal_and_publishes_job_failed() -> None:
     assert failed.job_id == JOB_ID
     assert failed.stage == events_pb2.JOB_STAGE_PROCESSING
     assert failed.error == UNKNOWN_MODEL_ERROR
+    assert failures.adds == [(1, {"reason": REASON_UNKNOWN_MODEL})]
 
 
-async def test_missing_api_key_is_terminal_and_publishes_job_failed() -> None:
+async def test_missing_api_key_is_terminal_and_publishes_job_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failures = FakeCounter()
+    monkeypatch.setattr(handler_module, "processing_failures", failures)
     js = FakeJetStream()
     model_key = "anthropic/claude-sonnet-4-5"
     kv = FakeKV({model_key: _catalog_entry(catalog_pb2.PROVIDER_ANTHROPIC, model_key, "claude-sonnet-4-5")})
@@ -161,6 +181,7 @@ async def test_missing_api_key_is_terminal_and_publishes_job_failed() -> None:
     failed = _single_failure(js)
     assert failed.stage == events_pb2.JOB_STAGE_PROCESSING
     assert failed.error == API_KEY_MISSING_ERROR
+    assert failures.adds == [(1, {"reason": REASON_API_KEY_MISSING})]
 
 
 async def test_fake_provider_runs_agent_and_publishes_job_structured() -> None:
@@ -286,7 +307,9 @@ async def test_provider_402_is_terminal_with_credits_copy(monkeypatch: pytest.Mo
     async def out_of_credits(*args: object, **kwargs: object) -> object:
         raise ModelHTTPError(status_code=402, model_name="claude-sonnet-4-5", body="insufficient credits")
 
+    failures = FakeCounter()
     monkeypatch.setattr(handler_module, "generate_cv", out_of_credits)
+    monkeypatch.setattr(handler_module, "processing_failures", failures)
     js = FakeJetStream()
     model_key = "anthropic/claude-sonnet-4-5"
     kv = FakeKV({model_key: _catalog_entry(catalog_pb2.PROVIDER_ANTHROPIC, model_key, "claude-sonnet-4-5")})
@@ -298,3 +321,4 @@ async def test_provider_402_is_terminal_with_credits_copy(monkeypatch: pytest.Mo
     failed = _single_failure(js)
     assert failed.error == CREDITS_EXHAUSTED_ERROR
     assert "try a different model" not in failed.error  # the old generic copy must be gone
+    assert failures.adds == [(1, {"reason": REASON_CREDITS_EXHAUSTED})]

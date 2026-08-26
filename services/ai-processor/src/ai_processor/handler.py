@@ -14,13 +14,14 @@ from google.protobuf.message import DecodeError
 from natsio.jetstream import JsMsg
 from natsio.jetstream.context import JetStreamContext
 from natsio.kv import KeyNotFoundError, KeyValue
+from opentelemetry.metrics import get_meter
 from pydantic import ValidationError
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models import Model
 from valkey.asyncio import Valkey
 
 from ai_processor.agent import generate_cv
-from ai_processor.providers import UnsupportedProviderError, build_model
+from ai_processor.providers import UnsupportedProviderError, build_model, provider_label
 
 API_KEY_MISSING_ERROR = "API key no longer available; please resubmit"
 UNKNOWN_MODEL_ERROR = "Unknown model selection; please choose a model from the catalog and resubmit"
@@ -32,9 +33,27 @@ UNAVAILABLE_ERROR = "The AI provider is temporarily unavailable; please resubmit
 INVALID_INPUT_ERROR = "The submitted data could not be processed; please resubmit"
 CREDITS_EXHAUSTED_ERROR = "The AI provider account is out of credits; please top up the account and resubmit"
 
+# Machine failure reasons — metric labels on cvgen.processing.failures.total,
+# kept separate from the user-safe messages above.
+REASON_API_KEY_MISSING = "api_key_missing"
+REASON_UNKNOWN_MODEL = "unknown_model"
+REASON_INVALID_INPUT = "invalid_input"
+REASON_AUTH = "auth"
+REASON_BAD_REQUEST = "bad_request"
+REASON_BAD_OUTPUT = "bad_output"
+REASON_UNAVAILABLE = "unavailable"
+REASON_CREDITS_EXHAUSTED = "credits_exhausted"
+REASON_INTERNAL = "internal"
+
 _TRANSIENT_STATUSES = frozenset({408, 429})
 
 log = structlog.get_logger("ai_processor.handler")
+
+_meter = get_meter("ai_processor.handler")
+processing_failures = _meter.create_counter(
+    "cvgen.processing.failures.total",
+    description="Processing-stage job failures by machine reason.",
+)
 
 
 def apikey_key(job_id: str) -> str:
@@ -86,15 +105,15 @@ class JobHandler:
         except (DecodeError, ValidationError, KeyError, ValueError) as exc:
             detail = failure_detail(exc)
             log.warning("unusable job request", job_id=job_id, detail=detail)
-            await self._fail(job_id, INVALID_INPUT_ERROR, detail=detail)
+            await self._fail(job_id, INVALID_INPUT_ERROR, reason=REASON_INVALID_INPUT, detail=detail)
 
         try:
             model = build_model(entry, api_key)
         except UnsupportedProviderError:
             log.warning("catalog entry has unsupported provider", job_id=job_id, model_key=request.model_key)
-            await self._fail(job_id, UNKNOWN_MODEL_ERROR)
+            await self._fail(job_id, UNKNOWN_MODEL_ERROR, reason=REASON_UNKNOWN_MODEL)
         del api_key  # held in the model/provider for this attempt only
-        cv = await self._structure(job_id, model, request)
+        cv = await self._structure(job_id, model, request, provider=provider_label(entry))
 
         structured = events_pb2.JobStructured(job_id=job_id, cv=cv_to_proto(cv))
         structured.occurred_at.GetCurrentTime()
@@ -112,7 +131,7 @@ class JobHandler:
         try:
             kv_entry = await self._kv.get(model_key)
         except KeyNotFoundError:
-            await self._fail(job_id, UNKNOWN_MODEL_ERROR)
+            await self._fail(job_id, UNKNOWN_MODEL_ERROR, reason=REASON_UNKNOWN_MODEL)
         entry = catalog_pb2.ModelCatalogEntry()
         entry.ParseFromString(kv_entry.value)
         return entry
@@ -120,10 +139,10 @@ class JobHandler:
     async def _claim_api_key(self, job_id: str) -> str:
         raw = await self._valkey.getdel(apikey_key(job_id))
         if raw is None:
-            await self._fail(job_id, API_KEY_MISSING_ERROR)
+            await self._fail(job_id, API_KEY_MISSING_ERROR, reason=REASON_API_KEY_MISSING)
         return raw.decode() if isinstance(raw, bytes) else str(raw)
 
-    async def _structure(self, job_id: str, model: Model, request: events_pb2.JobRequested) -> CV:
+    async def _structure(self, job_id: str, model: Model, request: events_pb2.JobRequested, *, provider: str) -> CV:
         attempts = len(self._retry_delays_s) + 1
         for attempt in range(attempts):
             try:
@@ -132,34 +151,37 @@ class JobHandler:
                     personal_info=request.personal_info,
                     career_text=request.career_text,
                     job_description=request.job_description,
+                    provider=provider,
+                    model_key=request.model_key,
                 )
             except UnexpectedModelBehavior as exc:
                 log.warning("model returned unusable output", job_id=job_id, error=str(exc))
-                await self._fail(job_id, BAD_OUTPUT_ERROR)
+                await self._fail(job_id, BAD_OUTPUT_ERROR, reason=REASON_BAD_OUTPUT)
             except Exception as exc:
                 if not _is_transient(exc):
                     if isinstance(exc, ModelHTTPError):
                         if exc.status_code in (401, 403):
-                            error = AUTH_ERROR
+                            error, reason = AUTH_ERROR, REASON_AUTH
                         elif exc.status_code == 402:
-                            error = CREDITS_EXHAUSTED_ERROR
+                            error, reason = CREDITS_EXHAUSTED_ERROR, REASON_CREDITS_EXHAUSTED
                         else:
-                            error = BAD_REQUEST_ERROR
+                            error, reason = BAD_REQUEST_ERROR, REASON_BAD_REQUEST
                         log.warning("provider rejected request", job_id=job_id, status=exc.status_code)
-                        await self._fail(job_id, error)
+                        await self._fail(job_id, error, reason=reason)
                     # The API key was already claimed via GETDEL, so a nak/redelivery
                     # can never succeed — it would only misreport the failure as a
                     # missing key. Terminate with the real reason instead.
                     log.exception("unexpected structuring failure", job_id=job_id)
-                    await self._fail(job_id, INTERNAL_ERROR)
+                    await self._fail(job_id, INTERNAL_ERROR, reason=REASON_INTERNAL)
                 if attempt + 1 == attempts:
                     log.warning("provider unavailable, retries exhausted", job_id=job_id, error=str(exc))
-                    await self._fail(job_id, UNAVAILABLE_ERROR)
+                    await self._fail(job_id, UNAVAILABLE_ERROR, reason=REASON_UNAVAILABLE)
                 log.warning("transient provider error, retrying", job_id=job_id, attempt=attempt, error=str(exc))
                 await asyncio.sleep(self._retry_delays_s[attempt])
         raise AssertionError("unreachable")  # pragma: no cover
 
-    async def _fail(self, job_id: str, error: str, *, detail: str | None = None) -> NoReturn:
+    async def _fail(self, job_id: str, error: str, *, reason: str, detail: str | None = None) -> NoReturn:
+        processing_failures.add(1, {"reason": reason})
         if detail is not None:
             error = f"{error} ({detail})"
         failed = events_pb2.JobFailed(job_id=job_id, stage=events_pb2.JOB_STAGE_PROCESSING, error=error)
