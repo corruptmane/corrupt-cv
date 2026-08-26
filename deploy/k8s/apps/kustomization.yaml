@@ -12,6 +12,6 @@ images:
   - name: ghcr.io/corruptmane/cvgen-gateway
     newTag: main-127-d393c64 # {"$imagepolicy": "flux-system:cvgen-gateway:tag"}
   - name: ghcr.io/corruptmane/cvgen-ai-processor
-    newTag: main-103-f7f6b25 # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
+    newTag: main-127-d393c64 # {"$imagepolicy": "flux-system:cvgen-ai-processor:tag"}
   - name: ghcr.io/corruptmane/cvgen-cv-generator
-    newTag: main-103-f7f6b25 # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}
+    newTag: main-127-d393c64 # {"$imagepolicy": "flux-system:cvgen-cv-generator:tag"}
