@@ -1,6 +1,6 @@
 # Build context: repo root.
 #   docker build -f services/gateway/Dockerfile .
-FROM golang:1.26 AS build
+FROM golang:1.26@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff AS build
 WORKDIR /src
 
 # Module files first for layer caching.
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # gateway's own dependencies being healthy (depends_on) and on the ops server
 # (:9090 /healthz, /readyz) for external probes. HTML templates and static
 # assets are embedded in the binary via go:embed.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/gateway /usr/local/bin/gateway
 # In-image default catalog; compose bind-mounts the repo copy over it so
 # catalog edits do not require an image rebuild.

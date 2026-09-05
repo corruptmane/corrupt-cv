@@ -1,7 +1,7 @@
 # Build context: repo root.
 #   docker build -f services/ai-processor/Dockerfile .
-FROM python:3.13-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS build
+COPY --from=ghcr.io/astral-sh/uv:0.11@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7 /uv /uvx /bin/
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
@@ -18,7 +18,7 @@ COPY services/cv-generator/pyproject.toml services/cv-generator/pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package ai-processor
 
-FROM python:3.13-slim
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
 RUN useradd --uid 65532 --user-group --create-home app
 WORKDIR /app
 ENV PATH=/app/.venv/bin:$PATH \
