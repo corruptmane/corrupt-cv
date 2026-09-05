@@ -13,7 +13,7 @@ x-s3-env: &s3-env
 services:
   nats:
     # 2.14+ required by the natsio client used in the Python services.
-    image: nats:2.14-alpine
+    image: nats:2.14-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3
     command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
       - "127.0.0.1:4222:4222"
@@ -28,7 +28,7 @@ services:
       retries: 12
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     environment:
       POSTGRES_USER: cv
       POSTGRES_PASSWORD: cv
@@ -44,7 +44,7 @@ services:
       retries: 12
 
   valkey:
-    image: valkey/valkey:8-alpine
+    image: valkey/valkey:8-alpine@sha256:cfb2aa4c8352930130fd45eb231a57310ac326d7323edae12b384b9270c46dda
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -67,7 +67,7 @@ services:
   # restores them + skips the rebuild on later boots. `just down` (-v) still wipes
   # everything by design.
   swift:
-    image: openstackswift/saio:latest
+    image: openstackswift/saio:latest@sha256:23a98fef911aec32d1a6aa3e6c2496ef9f9dc5e7a34ee2cd4ab1ecf6a0608a17
     platform: linux/amd64
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -96,7 +96,7 @@ services:
   # One-shot bucket bootstrap. Retries until Swift actually answers S3
   # requests (the healthcheck covers the proxy, not backend readiness).
   swift-init:
-    image: amazon/aws-cli:latest
+    image: amazon/aws-cli:latest@sha256:b6aeb95d19d7f5a8cae4eb814cb16739b6b2a4f2f46f427ada6a8c9a20d9881d
     depends_on:
       swift:
         condition: service_healthy
@@ -216,7 +216,7 @@ services:
   # ------------------------------------------------------------------
   otel-collector:
     profiles: ["observability"]
-    image: otel/opentelemetry-collector-contrib:0.135.0
+    image: otel/opentelemetry-collector-contrib:0.135.0@sha256:89107a3a8f4636a396927edf7025bb9614b8da2d92f4cc3f43109e8d115736e2
     command: ["--config=/etc/otel-collector.yaml"]
     volumes:
       - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
@@ -230,7 +230,7 @@ services:
 
   victoriametrics:
     profiles: ["observability"]
-    image: victoriametrics/victoria-metrics:v1.126.0
+    image: victoriametrics/victoria-metrics:v1.126.0@sha256:26dfc4ab90cf6fedc8115269adc22d300bcd5eab82ea1ebed3c8e22b49886ce1
     command:
       - "-retentionPeriod=7d"
       - "-storageDataPath=/storage"
@@ -244,7 +244,7 @@ services:
 
   victorialogs:
     profiles: ["observability"]
-    image: victoriametrics/victoria-logs:v1.36.1
+    image: victoriametrics/victoria-logs:v1.36.1@sha256:77de655798534241d3b6b9083de269721995046c68f85d5869855cb9e8e5a4a0
     command:
       - "-retentionPeriod=7d"
       - "-storageDataPath=/storage"
@@ -255,7 +255,7 @@ services:
 
   victoriatraces:
     profiles: ["observability"]
-    image: victoriametrics/victoria-traces:v0.6.0
+    image: victoriametrics/victoria-traces:v0.6.0@sha256:fd0493a39c5fa2412c005694608d1ed1a0212456bde75b422be0ec8e4eaa2e78
     command:
       - "-retentionPeriod=7d"
       - "-storageDataPath=/storage"
@@ -266,7 +266,7 @@ services:
 
   grafana:
     profiles: ["observability"]
-    image: grafana/grafana:12.2.1
+    image: grafana/grafana:12.2.1@sha256:35c41e0fd0295f5d0ee5db7e780cf33506abfaf47686196f825364889dee878b
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
