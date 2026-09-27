@@ -4,7 +4,7 @@
 # in at /migrations. Compose still bind-mounts ./migrations over it so new
 # dev migrations don't need a rebuild; the command/DSN live in compose.yaml
 # and the k8s Job respectively.
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go install github.com/pressly/goose/v3/cmd/goose@latest
