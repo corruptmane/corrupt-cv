@@ -1,7 +1,7 @@
 # Build context: repo root.
 #   docker build -f services/ai-processor/Dockerfile .
 FROM python:3.13-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /uvx /bin/
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
