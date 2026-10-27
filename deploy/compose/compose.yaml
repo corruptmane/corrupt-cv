@@ -266,7 +266,7 @@ services:
 
   grafana:
     profiles: ["observability"]
-    image: grafana/grafana:12.2.1
+    image: grafana/grafana:12.4.14@sha256:ae509d9ae8c1021ca32ec370a9ca975d40165eda9fccd1e1102d317ff8787cd7
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
